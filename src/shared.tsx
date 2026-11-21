@@ -3,9 +3,11 @@
 import { createContext, useContext, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from './api';
+import { useDay, useDecide } from './api/hooks';
+import { useAuth } from './auth';
 import type { DayStatus, DayView, OfficeSummary, Payslip, RequestRow } from './types';
 import { fmtDate, fmtDateLong, fmtDateTime, fmtDays, fmtDuration, fmtMoney, fmtMonth, fmtNum, fmtTime } from './lib/format';
-import { Avatar, Button, cx, Drawer, errText, Field, Icon, Load, Skeleton, Tag, useAction, useData, useToast } from './ui';
+import { Avatar, Button, cx, Drawer, errText, Field, Icon, Load, Skeleton, Tag, useAction, useToast } from './ui';
 
 // ---------- office scope (admin switches, a head is pinned) ----------
 export interface Scope { scope: string; setScope: (s: string) => void; offices: OfficeSummary[]; label: string; }
@@ -36,22 +38,34 @@ export function RequestStatus({ r }: { r: RequestRow }) {
 /** One click approves. Reject opens a required reason in place. Either one can be undone from the toast. */
 export function RequestItem({ r, onChanged, showOffice }: { r: RequestRow; onChanged: () => void; showOffice?: boolean }) {
   const toast = useToast();
+  const { user } = useAuth();
+  const decide = useDecide();
   const [mode, setMode] = useState<'idle' | 'reject' | 'busy' | 'approved' | 'rejected'>('idle');
   const [reason, setReason] = useState('');
   const [err, setErr] = useState('');
+  // A decided row can be followed up: the admin reverses the decision, the office head cancels approved leave.
+  const [follow, setFollow] = useState<null | 'reverse' | 'cancel'>(null);
+  const decided = r.status === 'approved' || r.status === 'rejected';
+  const canReverse = user?.role === 'admin' && decided && !r.direct && mode === 'idle';
+  const canCancel = !!r.canCancelApproved && mode === 'idle';
+  const followUp = useAction(async () => {
+    if (follow === 'reverse') await api.reverseDecision(r.id, reason); else await api.cancelApprovedLeave(r.id, reason);
+    toast.show(follow === 'reverse' ? `Decision reversed: ${r.employeeName}` : `Leave cancelled: ${r.employeeName}. The days are back in the balance.`);
+    setFollow(null); setReason(''); onChanged();
+  });
   async function act(decision: 'approved' | 'rejected') {
     if (decision === 'rejected' && !reason.trim()) { setErr('Write a reason. The employee will see it.'); return; }
-    setMode('busy'); setErr('');
+    // Optimistic: the row shows the result at once. If the server refuses, it goes back.
+    setMode(decision); setErr('');
     try {
-      await api.decide(r.id, decision, decision === 'rejected' ? reason : '');
-      setMode(decision);
+      await decide.mutateAsync({ id: r.id, decision, comment: decision === 'rejected' ? reason : '' });
       setTimeout(() => {
         onChanged();
         toast.show(`${decision === 'approved' ? 'Approved' : 'Rejected'}: ${r.employeeName}, ${r.title.toLowerCase().replace('correction ·', 'correction for').replace(' · ', ' ')}`, {
           undo: async () => { try { await api.undoDecision(r.id); } catch (e) { toast.show(errText(e)); } onChanged(); },
         });
       }, 420);
-    } catch (e) { setErr(errText(e)); setMode(decision === 'rejected' ? 'reject' : 'idle'); }
+    } catch (e) { setErr(errText(e)); setMode(decision === 'rejected' ? 'reject' : 'idle'); onChanged(); }
   }
   return (
     <div className={cx('px-4 py-3 transition-opacity duration-300', mode === 'approved' && 'anim-flash-ok opacity-50', mode === 'rejected' && 'anim-flash-no opacity-50')}>
@@ -62,15 +76,21 @@ export function RequestItem({ r, onChanged, showOffice }: { r: RequestRow; onCha
             <Link to={`/people/${r.employeeId}`} className="font-semibold hover:underline">{r.employeeName}</Link>
             {r.escalated && <Tag tone="navy">Escalated</Tag>}
             {r.fromHead && <Tag>Office head</Tag>}
-            {r.status !== 'pending' && <RequestStatus r={r} />}
+            {r.status !== 'pending' && mode === 'idle' && <RequestStatus r={r} />}
           </div>
           <div className="mt-0.5">{r.title}{r.detail && <span className="text-slate"> · {r.detail}</span>}{showOffice && <span className="text-slate"> · {r.officeName}</span>}</div>
           <div className="mt-0.5 text-[13px] text-slate">“{r.reason}” · asked {fmtDateTime(r.createdAt)}</div>
-          {r.status !== 'pending' && r.decidedByName && (
+          {r.status !== 'pending' && mode === 'idle' && r.decidedByName && (
             <div className="mt-0.5 text-[13px] text-slate">{r.status === 'approved' ? 'Approved' : 'Rejected'} by {r.decidedByName}{r.decidedAt && `, ${fmtDateTime(r.decidedAt)}`}{r.comment && `. ${r.comment}`}</div>
           )}
         </div>
-        {r.status === 'pending' && (r.canAct ? (
+        {(canReverse || canCancel) && !follow && (
+          <div className="flex gap-2">
+            {canCancel && <Button size="sm" variant="ghost" onClick={() => { setReason(''); setFollow('cancel'); }}>Cancel leave</Button>}
+            {canReverse && <Button size="sm" variant="ghost" onClick={() => { setReason(''); setFollow('reverse'); }}>Reverse</Button>}
+          </div>
+        )}
+        {(r.status === 'pending' || mode === 'approved' || mode === 'rejected') && (r.canAct || mode !== 'idle' ? (
           mode === 'approved' || mode === 'rejected' ? (
             <span className={cx('anim-pop inline-flex h-8 items-center gap-1 font-semibold', mode === 'approved' ? 'text-present' : 'text-absent')}>
               <Icon name={mode === 'approved' ? 'check' : 'x'} size={16} />{mode === 'approved' ? 'Approved' : 'Rejected'}
@@ -92,6 +112,16 @@ export function RequestItem({ r, onChanged, showOffice }: { r: RequestRow; onCha
           <Button size="sm" variant="ghost" className="!h-10" onClick={() => { setMode('idle'); setErr(''); }}>Cancel</Button>
         </form>
       )}
+      {follow && (
+        <form className="anim-fade-up mt-3 flex flex-wrap items-start gap-2 pl-11" onSubmit={e => { e.preventDefault(); followUp.run(); }}>
+          <div className="min-w-0 flex-1 basis-56">
+            <input autoFocus className={cx('input', followUp.error && 'invalid')} placeholder={follow === 'reverse' ? `Why is this being changed to ${r.status === 'approved' ? 'rejected' : 'approved'}? (required)` : 'Reason for cancelling (the employee will see it)'} value={reason} onChange={e => setReason(e.target.value)} />
+          </div>
+          <Button size="sm" variant="danger" type="submit" state={followUp.state} className="!h-10">{follow === 'reverse' ? (r.status === 'approved' ? 'Change to rejected' : 'Change to approved') : 'Cancel this leave'}</Button>
+          <Button size="sm" variant="ghost" className="!h-10" onClick={() => setFollow(null)}>Keep as is</Button>
+        </form>
+      )}
+      {followUp.error && <div className="anim-fade-up mt-2 pl-11 text-[13px] text-absent">{followUp.error}</div>}
       {err && <div className="anim-fade-up mt-2 pl-11 text-[13px] text-absent">{err}</div>}
     </div>
   );
@@ -107,7 +137,7 @@ export function DayDrawer({ target, onClose, onChanged }: { target: { employeeId
   );
 }
 function DayBody({ employeeId, date, onChanged }: { employeeId: string; date: string; onChanged: () => void }) {
-  const q = useData(() => api.day(employeeId, date), [employeeId, date]);
+  const q = useDay(employeeId, date);
   const toast = useToast();
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({ inTime: '', outTime: '', reason: '' });
@@ -121,7 +151,7 @@ function DayBody({ employeeId, date, onChanged }: { employeeId: string; date: st
         <div className="space-y-5">
           <div>
             <Link to={`/people/${d.employee.id}`} className="font-semibold hover:underline">{d.employee.name}</Link>
-            <span className="text-slate"> · {d.employee.id} · {d.employee.officeName}</span>
+            <span className="text-slate"> · {d.employee.code} · {d.employee.officeName}</span>
             <div className="mt-2 flex flex-wrap items-center gap-2">
               {dayChip(d.day)}
               {d.day.manual && <Tag tone="brass">Manual</Tag>}
@@ -149,7 +179,7 @@ function DayBody({ employeeId, date, onChanged }: { employeeId: string; date: st
           {d.manual && (
             <div className="rounded-lg border border-brass/50 bg-brass/10 p-3">
               <div className="font-semibold">Manual correction</div>
-              <div className="mt-0.5 text-[13px]">{[d.manual.inTime && `In ${fmtTime(d.manual.inTime)}`, d.manual.outTime && `Out ${fmtTime(d.manual.outTime)}`].filter(Boolean).join(', ')} · by {d.manual.byName}, {fmtDateTime(d.manual.at)}</div>
+              <div className="mt-0.5 text-[13px]">{[d.manual.inTime && `In ${fmtTime(d.manual.inTime)}`, d.manual.outTime && `Out ${fmtTime(d.manual.outTime)}`].filter(Boolean).join(', ')} · by {d.manual.byName}{d.manual.at && `, ${fmtDateTime(d.manual.at)}`}</div>
               <div className="mt-0.5 text-[13px] text-slate">“{d.manual.reason}”</div>
             </div>
           )}
@@ -192,7 +222,7 @@ export function PayslipSheet({ slip }: { slip: Payslip }) {
         <div className="text-right"><div className="text-[13px] uppercase tracking-wide text-slate">Payslip</div><div className="font-serif text-xl font-semibold">{fmtMonth(slip.month)}</div></div>
       </div>
       <div className="grid grid-cols-2 gap-x-8 gap-y-3 border-b border-mist py-5 md:grid-cols-4">
-        {[['Employee', slip.employee.name], ['Employee ID', slip.employee.id], ['Designation', slip.employee.designation], ['Joined', fmtDate(slip.employee.joinDate) + ' ' + slip.employee.joinDate.slice(0, 4)]].map(([k, v]) => (
+        {[['Employee', slip.employee.name], ['Employee ID', slip.employee.code], ['Designation', slip.employee.designation], ['Joined', fmtDate(slip.employee.joinDate) + ' ' + slip.employee.joinDate.slice(0, 4)]].map(([k, v]) => (
           <div key={k}><div className="text-[12px] uppercase tracking-wide text-slate">{k}</div><div className="font-medium">{v}</div></div>
         ))}
       </div>
@@ -225,7 +255,7 @@ export function PayslipSheet({ slip }: { slip: Payslip }) {
           <div className="divide-y divide-mist">{r.trace.map(t => line(`${fmtDate(t.date)} · ${t.label}`, fmtDays(t.unpaid)))}</div>
         </div>
       )}
-      <p className="pt-8 text-[12px] text-slate">Locked by {slip.lockedByName} on {fmtDateTime(slip.lockedAt)}. Net pay = salary − day rate × unpaid days. Unpaid days = absent days + half of each half day + unpaid leave. This payslip is generated by the system and needs no signature.</p>
+      <p className="pt-8 text-[12px] text-slate">Locked by {slip.lockedByName} on {fmtDateTime(slip.lockedAt)}. Net pay = salary − day rate × unpaid days, rounded to the nearest rupee. Unpaid days = absent days + half of each half day + unpaid leave. This payslip is generated by the system and needs no signature.</p>
     </div>
   );
 }

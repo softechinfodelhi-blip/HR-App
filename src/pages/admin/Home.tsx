@@ -1,12 +1,12 @@
 // Home for the admin and for office heads: who is in, who is not, and what is waiting for a decision.
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api } from '../../api';
+import { useLiveBoard, useMyHome, useQueue, useToday } from '../../api/hooks';
 import { useAuth } from '../../auth';
-import { firstName, fmtDateLong, fmtTime } from '../../lib/format';
+import { firstName, fmtDateLong, fmtDateTime, fmtTime } from '../../lib/format';
 import { dayChip, DayDrawer, RequestItem, useScope } from '../../shared';
 import type { TodayPerson } from '../../types';
-import { Avatar, Banner, Bar, Card, cx, Drawer, Empty, Icon, Load, Ring, SectionTitle, Skeleton, SkeletonRows, Stat, Tag, useData } from '../../ui';
+import { Avatar, Banner, Bar, Card, cx, Drawer, Empty, Icon, Load, Ring, SectionTitle, Skeleton, SkeletonRows, Stat, Tag } from '../../ui';
 
 type ListKey = 'in' | 'notIn' | 'onLeave';
 const LIST_TITLE: Record<ListKey, string> = { in: 'In the office', notIn: 'Not in yet', onLeave: 'On leave today' };
@@ -14,9 +14,10 @@ const LIST_TITLE: Record<ListKey, string> = { in: 'In the office', notIn: 'Not i
 export default function Home() {
   const { user } = useAuth();
   const { scope, label } = useScope();
-  const board = useData(() => api.today(scope), [scope], 15000);
-  const queue = useData(() => api.queue(scope), [scope], 30000);
-  const mine = useData(() => (user!.role === 'head' ? api.myHome() : Promise.resolve(null)), [user!.id]);
+  const board = useToday(scope);
+  const queue = useQueue(scope);
+  const mine = useMyHome(user!.role === 'head'); // a head is also an employee
+  useLiveBoard(scope); // punches refresh the board the moment the server stores them
   const [list, setList] = useState<ListKey | null>(null);
   const [day, setDay] = useState<{ employeeId: string; date: string } | null>(null);
   const queueRef = useRef<HTMLDivElement>(null);
@@ -30,7 +31,7 @@ export default function Home() {
 
   const hour = Number((board.data?.time ?? '09:00').slice(0, 2));
   const greet = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
-  const pick = (k: ListKey, people: TodayPerson[]) => people.filter(p => (k === 'in' ? ['working', 'present'].includes(p.day.status) : k === 'notIn' ? p.day.status === 'not_in' : p.day.status === 'leave'));
+  const pick = (k: ListKey, people: TodayPerson[]) => people.filter(p => (k === 'in' ? ['working', 'present', 'half_late', 'half_short', 'missing'].includes(p.day.status) : k === 'notIn' ? ['not_in', 'absent'].includes(p.day.status) : p.day.status === 'leave'));
 
   return (
     <div>
@@ -48,7 +49,7 @@ export default function Home() {
             <>
               {b.offices.filter(o => o.terminal && !o.terminal.online).map(o => (
                 <Banner key={o.officeId} icon="wifi" action={<Link to="/attendance/terminals" className="font-semibold underline">Terminals</Link>}>
-                  <span className="font-semibold">{o.name} terminal is offline</span> since {fmtTime(o.terminal!.lastSeen.slice(11))}. Punches are kept on the device and arrive when it reconnects, so people there may show as not in.
+                  <span className="font-semibold">{o.name} terminal is offline</span>{o.terminal!.lastSeen ? ` since ${fmtDateTime(o.terminal!.lastSeen)}` : ''}. Punches are kept on the device and arrive when it reconnects, so people there may show as not in.
                 </Banner>
               ))}
               {!b.working && <Banner tone="leave" icon="calendar">Today is {b.dayLabel || 'a day off'}. No attendance is expected.</Banner>}

@@ -1,11 +1,12 @@
 // Leave: requests, the month calendar and the holiday list of each office.
 import { useState } from 'react';
 import { api } from '../../api';
+import { useHolidays, useLeaveCalendar } from '../../api/hooks';
 import { useAuth } from '../../auth';
-import { dow, fmtDate, fmtMonth, monthOf, parts } from '../../lib/format';
+import { dow, fmtDate, fmtMonth, parts, thisMonth, todayYmd } from '../../lib/format';
 import { useScope } from '../../shared';
 import type { CalendarDay } from '../../types';
-import { Button, Card, cx, Drawer, Empty, errText, Field, Load, MonthPicker, PageTitle, Segmented, SkeletonRows, Tag, useAction, useData, useToast } from '../../ui';
+import { Button, Card, cx, Drawer, Empty, errText, Field, Load, MonthPicker, PageTitle, Segmented, SkeletonRows, Tag, useAction, useToast } from '../../ui';
 import { RequestsList } from './Attendance';
 
 export const LeaveRequests = () => <RequestsList kind="leave" title="Leave requests" sub="Paid leave cannot go beyond the balance." />;
@@ -13,9 +14,9 @@ export const LeaveRequests = () => <RequestsList kind="leave" title="Leave reque
 // =====================================================================
 export function LeaveCalendar() {
   const { scope, label } = useScope();
-  const [month, setMonth] = useState(() => monthOf(api.demo.now()));
-  const q = useData(() => api.leaveCalendar(scope, month), [scope, month]);
-  const today = api.demo.now().slice(0, 10);
+  const [month, setMonth] = useState(thisMonth);
+  const q = useLeaveCalendar(scope, month);
+  const today = todayYmd();
   const chip = (p: CalendarDay['people'][number]) => (
     <span key={p.employeeId} title={`${p.name} · ${p.type === 'UNPAID' ? 'Unpaid leave' : p.type}${p.half ? ', half day' : ''}${p.pending ? ', pending' : ''}`}
       className={cx('block truncate rounded px-1.5 py-0.5 text-[12px] font-medium', p.pending ? 'border border-dashed border-leave text-leave' : 'bg-leave text-white')}>
@@ -79,17 +80,17 @@ export function Holidays() {
   const { user } = useAuth();
   const { scope, offices, label } = useScope();
   const toast = useToast();
-  const year = Number(api.demo.now().slice(0, 4));
-  const q = useData(() => api.holidays(scope, year), [scope, year]);
+  const year = Number(todayYmd().slice(0, 4));
+  const q = useHolidays(scope, year);
   const [adding, setAdding] = useState(false);
-  const blank = () => ({ date: '', name: '', kind: 'holiday' as 'holiday' | 'working', officeIds: scope === 'all' ? offices.map(o => o.id) : [scope] });
+  const blank = () => ({ date: '', name: '', kind: 'holiday' as 'holiday' | 'working' | 'off', officeIds: scope === 'all' ? offices.map(o => o.id) : [scope] });
   const [f, setF] = useState(blank);
   const add = useAction(async () => { const h = await api.addHoliday(f); setAdding(false); q.reload(); toast.show(`${h.name} added for ${fmtDate(h.date)}.`, { undo: async () => { await api.removeHoliday(h.id); q.reload(); } }); });
   const remove = async (id: string) => {
     try { const h = await api.removeHoliday(id); q.reload(); toast.show(`${h.name} removed.`, { undo: async () => { await api.restoreHoliday(h); q.reload(); } }); }
     catch (e) { toast.show(errText(e)); }
   };
-  const today = api.demo.now().slice(0, 10);
+  const today = todayYmd();
   return (
     <div>
       <PageTitle title={`Holidays ${year}`} sub={`${label} · Sundays and the 2nd and 4th Saturday are always off.`}
@@ -103,7 +104,7 @@ export function Holidays() {
                   <li key={h.id} className={cx('flex flex-wrap items-center gap-3 px-4 py-3', h.date < today && 'text-slate')}>
                     <span className="w-28 font-medium tnum">{fmtDate(h.date)}</span>
                     <span className="min-w-0 flex-1 basis-40"><span className="font-medium">{h.name}</span><span className="block text-[13px] text-slate">{h.offices}</span></span>
-                    {h.kind === 'working' ? <Tag tone="navy">Working day</Tag> : <Tag>Holiday</Tag>}
+                    {h.kind === 'working' ? <Tag tone="navy">Working day</Tag> : h.kind === 'off' ? <Tag>Office closed</Tag> : <Tag>Holiday</Tag>}
                     {h.canEdit && h.date >= today ? <Button size="sm" variant="ghost" onClick={() => remove(h.id)}>Remove</Button> : <span className="w-[76px]" />}
                   </li>
                 ))}
@@ -112,12 +113,12 @@ export function Holidays() {
           </Card>
         )}
       </Load>
-      <Drawer open={adding} onClose={() => setAdding(false)} title="Add a date" sub="A holiday, or a weekly off that will be worked."
+      <Drawer open={adding} onClose={() => setAdding(false)} title="Add a date" sub="A holiday, a weekly off that will be worked, or a working day the office is closed."
         footer={<><Button variant="ghost" onClick={() => setAdding(false)}>Cancel</Button><Button variant="primary" state={add.state} onClick={() => add.run()}>Add</Button></>}>
         <div className="space-y-4">
-          <Segmented value={f.kind} onChange={kind => setF({ ...f, kind })} options={[{ value: 'holiday', label: 'Holiday' }, { value: 'working', label: 'Working day on an off' }]} />
+          <Segmented value={f.kind} onChange={kind => setF({ ...f, kind })} options={[{ value: 'holiday', label: 'Holiday' }, { value: 'working', label: 'Working day on an off' }, { value: 'off', label: 'Office closed' }]} />
           <Field label="Date"><input type="date" className="input" value={f.date} onChange={e => setF({ ...f, date: e.target.value })} /></Field>
-          <Field label="Name" hint={f.kind === 'working' ? 'For example: Year-end stock count.' : 'For example: Diwali.'}><input className="input" value={f.name} onChange={e => setF({ ...f, name: e.target.value })} /></Field>
+          <Field label="Name" hint={f.kind === 'working' ? 'For example: Year-end stock count.' : f.kind === 'off' ? 'For example: Office move. The day is paid, like a weekly off.' : 'For example: Diwali.'}><input className="input" value={f.name} onChange={e => setF({ ...f, name: e.target.value })} /></Field>
           {user!.role === 'admin' ? (
             <fieldset>
               <legend className="mb-1 text-[13px] font-medium">Offices</legend>

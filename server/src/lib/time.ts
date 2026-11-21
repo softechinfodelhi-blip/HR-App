@@ -6,9 +6,12 @@ export type Month = string; // 2026-11
 const IST_OFFSET_MS = 330 * 60 * 1000;
 const pad = (n: number) => String(n).padStart(2, '0');
 
-/** The clock. Tests replace it with setNow(). */
+/** The clock. Tests freeze it with setNow(). A development server can be started at another date with shiftClock(). */
 let fixedNow: Date | null = null;
-export const now = (): Date => (fixedNow ? new Date(fixedNow) : new Date());
+let shiftMs = 0;
+export const now = (): Date => (fixedNow ? new Date(fixedNow) : new Date(Date.now() + shiftMs));
+/** Makes the clock read `startAt` now, and keep ticking from there. Never used in production. */
+export function shiftClock(startAt: Date | string) { shiftMs = new Date(startAt).getTime() - Date.now(); }
 export function setNow(d: Date | string | null) { fixedNow = d === null ? null : new Date(d); }
 
 /** A Date whose UTC fields read as the wall clock in India. Only for formatting. */

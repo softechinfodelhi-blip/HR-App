@@ -4,10 +4,17 @@
 import { createAdmsApp } from './adms/app';
 import { createApp } from './app';
 import { prisma } from './db';
-import { env } from './env';
+import { env, isProd } from './env';
+import { localDateTime, now, shiftClock } from './lib/time';
 import { startJobs } from './jobs';
 
 async function main() {
+  // Development only: start the server as if it were another date, for trying month end without waiting for it.
+  // Example: SBM_FAKE_NOW=2026-12-01T10:00:00+05:30
+  if (!isProd && process.env.SBM_FAKE_NOW) {
+    shiftClock(process.env.SBM_FAKE_NOW);
+    console.log(`[dev] the clock is shifted: the server thinks it is ${localDateTime(now())} (office time)`);
+  }
   await prisma.$connect();
   const app = createApp();
   const server = app.listen(env.PORT, () => console.log(`[api] listening on port ${env.PORT}`));

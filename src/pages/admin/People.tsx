@@ -2,13 +2,14 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../../api';
+import { useEmployee, useEmployees, useLedger, useOffices, useSettings } from '../../api/hooks';
 import { useAuth } from '../../auth';
-import { addMonths, fmtDate, fmtDateTime, fmtDay, fmtMoney, fmtMonth, fmtNum, monthOf } from '../../lib/format';
+import { addMonths, fmtDate, fmtDateTime, fmtDay, fmtMoney, fmtMonth, fmtNum, fmtTime, monthOf, todayYmd } from '../../lib/format';
 import { RequestStatus, useScope } from '../../shared';
 import type { EmployeeDetail, EmployeeRow, NewEmployeeInput, OfficeSummary } from '../../types';
-import { Avatar, Banner, Button, Card, cx, Drawer, Empty, errText, Field, Icon, Load, PageTitle, SectionTitle, Segmented, Skeleton, SkeletonRows, Tag, useAction, useData, useToast } from '../../ui';
+import { Avatar, Banner, Button, Card, cx, Drawer, Empty, errText, Field, Icon, Load, PageTitle, SectionTitle, Segmented, Skeleton, SkeletonRows, Tag, useAction, useToast } from '../../ui';
 
-const today = () => api.demo.now().slice(0, 10);
+const today = todayYmd;
 function StatusTag({ e }: { e: EmployeeRow }) {
   if (e.status === 'invited') return <Tag tone="brass">Invite sent</Tag>;
   if (e.status === 'inactive') return <Tag>Switched off</Tag>;
@@ -22,17 +23,17 @@ export function People() {
   const toast = useToast();
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<'all' | 'active' | 'invited' | 'inactive'>('all');
-  const q = useData(() => api.employees({ scope, search, status }), [scope, search, status]);
+  const q = useEmployees(scope, search, status);
   const [adding, setAdding] = useState(false);
-  const [added, setAdded] = useState<{ row: EmployeeRow; token: string } | null>(null);
+  const [added, setAdded] = useState<{ row: EmployeeRow; token: string | null } | null>(null);
 
   return (
     <div>
       <PageTitle title="Employees" sub={label} actions={<Button variant="primary" icon="plus" onClick={() => setAdding(true)}>Add employee</Button>} />
       {added && (
         <Banner tone="present" icon="check" action={<button aria-label="Dismiss" onClick={() => setAdded(null)}><Icon name="x" size={16} /></button>}>
-          <span className="font-semibold">{added.row.name} is added as {added.row.id}.</span> An invite to set a password went to {added.row.email}.{' '}
-          <Link to={`/invite/${added.token}`} className="border-b border-dashed border-ink font-medium">Demo: open the invite link as {added.row.name.split(' ')[0]}</Link>
+          <span className="font-semibold">{added.row.name} is added as {added.row.code}.</span> An invite to set a password went to {added.row.email}. The link is valid for 72 hours.{' '}
+          {added.token && <Link to={`/invite/${added.token}`} className="border-b border-dashed border-ink font-medium">Development only: open the invite link as {added.row.name.split(' ')[0]}</Link>}
         </Banner>
       )}
       <div className="mb-3 flex flex-wrap items-center gap-3">
@@ -58,7 +59,7 @@ export function People() {
                     <td className="px-4 py-3">
                       <Link to={`/people/${e.id}`} className="flex items-center gap-3">
                         <Avatar name={e.name} />
-                        <span className="min-w-0"><span className="flex items-center gap-2 font-medium group-hover:underline">{e.name}{e.isHead && <Tag>Office head</Tag>}</span><span className="block text-[13px] text-slate">{e.id}</span></span>
+                        <span className="min-w-0"><span className="flex items-center gap-2 font-medium group-hover:underline">{e.name}{e.isHead && <Tag>Office head</Tag>}</span><span className="block text-[13px] text-slate">{e.code}</span></span>
                       </Link>
                     </td>
                     {scope === 'all' && <td className="hidden px-4 py-3 md:table-cell">{e.officeName}</td>}
@@ -83,9 +84,9 @@ export function People() {
 }
 
 /** Five fields to type. Everything else is prefilled with the usual values. */
-function AddEmployee({ open, onClose, offices, fixedOffice, onAdded }: { open: boolean; onClose: () => void; offices: OfficeSummary[]; fixedOffice: string | null; onAdded: (row: EmployeeRow, token: string) => void }) {
+function AddEmployee({ open, onClose, offices, fixedOffice, onAdded }: { open: boolean; onClose: () => void; offices: OfficeSummary[]; fixedOffice: string | null; onAdded: (row: EmployeeRow, token: string | null) => void }) {
   const { user } = useAuth();
-  const settings = useData(() => api.settings(), []);
+  const settings = useSettings();
   const blank = (): NewEmployeeInput => ({
     name: '', email: '', phone: '', officeId: fixedOffice ?? offices[0]?.id ?? '', designation: '', joinDate: today(), salary: 0, effectiveMonth: monthOf(today()),
     clQuota: settings.data?.defaultClQuota ?? 12, plQuota: settings.data?.defaultPlQuota ?? 18,
@@ -101,7 +102,9 @@ function AddEmployee({ open, onClose, offices, fixedOffice, onAdded }: { open: b
     email: !/^\S+@\S+\.\S+$/.test(f.email) ? 'Enter a valid email address.' : '',
     salary: !(f.salary > 0) ? 'Enter the monthly salary.' : '',
   };
-  const act = useAction(async () => { const r = await api.createEmployee({ ...f, effectiveMonth: monthOf(f.joinDate) }); onAdded(r.employee, r.inviteToken); });
+  // The admin adds office heads: offered when the chosen office has no head yet.
+  const noHead = user!.role === 'admin' && !!offices.find(o => o.id === f.officeId) && !offices.find(o => o.id === f.officeId)!.headId;
+  const act = useAction(async () => { const r = await api.createEmployee({ ...f, role: noHead && f.role === 'head' ? 'head' : undefined, effectiveMonth: monthOf(f.joinDate) }); onAdded(r.employee, r.inviteToken); });
   const submit = () => { setTouched({ name: true, email: true, salary: true }); if (!errs.name && !errs.email && !errs.salary) act.run(); };
   const show = (k: keyof typeof errs) => (touched[k] ? errs[k] : '');
   return (
@@ -127,6 +130,9 @@ function AddEmployee({ open, onClose, offices, fixedOffice, onAdded }: { open: b
           <Field label="CL per year"><input type="number" min={0} className="input tnum" value={f.clQuota} onChange={e => set('clQuota', Number(e.target.value))} /></Field>
           <Field label="PL per year"><input type="number" min={0} className="input tnum" value={f.plQuota} onChange={e => set('plQuota', Number(e.target.value))} /></Field>
         </div>
+        {noHead && (
+          <label className="flex items-center gap-2"><input type="checkbox" className="h-4 w-4 accent-[var(--color-ink)]" checked={f.role === 'head'} onChange={e => set('role', e.target.checked ? 'head' : undefined)} />Make this person the office head<span className="text-[13px] text-slate">(this office has none yet)</span></label>
+        )}
         <p className="text-[13px] text-slate">Leave is credited 1/12 on the 1st of each month. The employee ID and terminal user ID are assigned for you.</p>
         {act.error && <p className="anim-fade-up text-absent" role="alert">{act.error}</p>}
         <button type="submit" className="hidden" />
@@ -138,7 +144,7 @@ function AddEmployee({ open, onClose, offices, fixedOffice, onAdded }: { open: b
 // =====================================================================
 export function Profile() {
   const { id = '' } = useParams();
-  const q = useData(() => api.employee(id), [id]);
+  const q = useEmployee(id);
   return (
     <div>
       <Link to="/people" className="mb-3 inline-flex items-center gap-1 text-[13px] font-medium text-slate hover:text-ink"><Icon name="left" size={14} />Employees</Link>
@@ -155,6 +161,7 @@ function ProfileBody({ d, reload }: { d: EmployeeDetail; reload: () => Promise<v
   const [editing, setEditing] = useState(false);
   const [salaryOpen, setSalaryOpen] = useState(false);
   const [token, setToken] = useState(d.inviteToken);
+  const [adjusting, setAdjusting] = useState(false);
   const resend = useAction(async () => { const r = await api.resendInvite(e.id); setToken(r.inviteToken); toast.show('A new invite link was sent.'); });
   const toggle = useAction(async () => {
     const next = e.status === 'inactive' ? 'active' : 'inactive';
@@ -168,14 +175,14 @@ function ProfileBody({ d, reload }: { d: EmployeeDetail; reload: () => Promise<v
         <Avatar name={e.name} size={56} />
         <div className="min-w-0 flex-1 basis-56">
           <div className="flex flex-wrap items-center gap-2"><h1 className="font-serif text-[26px] font-semibold leading-tight">{e.name}</h1>{e.isHead && <Tag>Office head</Tag>}<StatusTag e={e} /></div>
-          <div className="mt-0.5 text-slate">{e.id} · {e.designation} · {e.officeName}</div>
+          <div className="mt-0.5 text-slate">{e.code} · {e.designation} · {e.officeName}</div>
         </div>
         {d.canEdit && <Button onClick={() => setEditing(true)}>Edit details</Button>}
       </Card>
       {own && <Banner tone="leave" icon="lock">This is your own record. Only the admin can change it or decide your requests.</Banner>}
       {e.status === 'invited' && d.canEdit && (
         <Banner icon="file" action={<Button size="sm" state={resend.state} onClick={() => resend.run()}>Send a new invite</Button>}>
-          {e.name.split(' ')[0]} has not set a password yet.{token && <> <Link to={`/invite/${token}`} className="border-b border-dashed border-ink font-medium">Demo: open the invite link</Link></>}
+          {e.name.split(' ')[0]} has not set a password yet.{token && <> <Link to={`/invite/${token}`} className="border-b border-dashed border-ink font-medium">Development only: open the invite link</Link></>}
         </Banner>
       )}
 
@@ -183,7 +190,7 @@ function ProfileBody({ d, reload }: { d: EmployeeDetail; reload: () => Promise<v
         <section>
           <SectionTitle>Details</SectionTitle>
           <Card className="divide-y divide-mist">
-            {[['Email', e.email], ['Phone', e.phone || 'Not added'], ['Joined', fmtDate(e.joinDate) + ' ' + e.joinDate.slice(0, 4)], ['Terminal user ID', e.terminalUserId], ['Leave per year', `CL ${e.clQuota}, PL ${e.plQuota}`]].map(([k, v]) => (
+            {[['Email', e.email], ['Phone', e.phone || 'Not added'], ['Joined', fmtDate(e.joinDate) + ' ' + e.joinDate.slice(0, 4)], ...(e.lastWorkingDate ? [['Last working date', fmtDate(e.lastWorkingDate) + ' ' + e.lastWorkingDate.slice(0, 4)]] : []), ['Terminal user ID', e.terminalUserId || 'Not set'], ['Leave per year', `CL ${e.clQuota}, PL ${e.plQuota}`]].map(([k, v]) => (
               <div key={k} className="flex justify-between gap-4 px-4 py-3"><span className="text-slate">{k}</span><span className="text-right font-medium">{v}</span></div>
             ))}
           </Card>
@@ -202,7 +209,7 @@ function ProfileBody({ d, reload }: { d: EmployeeDetail; reload: () => Promise<v
         </section>
 
         <section>
-          <SectionTitle>Leave balance</SectionTitle>
+          <SectionTitle right={<Button size="sm" onClick={() => setAdjusting(true)}>{d.canEdit ? 'Adjust or see entries' : 'See entries'}</Button>}>Leave balance</SectionTitle>
           <Card className="grid grid-cols-2 divide-x divide-mist">
             {([['CL', d.balances.cl], ['PL', d.balances.pl]] as const).map(([k, b]) => (
               <div key={k} className="p-4"><div className="text-slate">{k}</div><div className="font-serif text-[28px] font-semibold tnum">{fmtNum(b.balance)}</div><div className="text-[13px] text-slate">{b.pending > 0 ? `${fmtNum(b.pending)} pending approval · ` : ''}{b.quota} per year</div></div>
@@ -250,7 +257,56 @@ function ProfileBody({ d, reload }: { d: EmployeeDetail; reload: () => Promise<v
         </section>
       )}
       <EditDetails open={editing} onClose={() => setEditing(false)} e={e} onSaved={() => { setEditing(false); reload(); toast.show('Details saved.'); }} />
+      <LeaveLedger open={adjusting} onClose={() => setAdjusting(false)} d={d} />
     </div>
+  );
+}
+const LEDGER_LABEL: Record<string, string> = { credit: 'Monthly credit', leave: 'Leave taken', reversal: 'Leave given back', adjustment: 'Adjustment', opening: 'Opening balance', lapse: 'Year end: CL lapsed', carry_cap: 'Year end: PL over the cap' };
+/** Every entry behind a leave balance. A manager can add an adjustment, with a reason. */
+function LeaveLedger({ open, onClose, d }: { open: boolean; onClose: () => void; d: EmployeeDetail }) {
+  const e = d.employee;
+  const toast = useToast();
+  const q = useLedger(e.id, open);
+  const [f, setF] = useState({ type: 'CL' as 'CL' | 'PL', days: '', note: '' });
+  const act = useAction(async () => {
+    await api.adjustBalance(e.id, { type: f.type, days: Number(f.days), note: f.note });
+    toast.show(`${f.type} balance changed by ${Number(f.days) > 0 ? '+' : ''}${Number(f.days)}.`); setF({ type: f.type, days: '', note: '' });
+  });
+  return (
+    <Drawer open={open} onClose={onClose} title="Leave balance" sub={`${e.name} · ${e.code}`} wide>
+      <div className="space-y-5">
+        {d.canEdit && (
+          <form className="space-y-3 rounded-lg border border-mist p-3" onSubmit={ev => { ev.preventDefault(); act.run(); }}>
+            <div className="font-semibold">Adjust the balance</div>
+            <div className="grid grid-cols-[auto_1fr] items-end gap-3">
+              <Segmented value={f.type} onChange={type => setF({ ...f, type })} options={[{ value: 'CL', label: 'CL' }, { value: 'PL', label: 'PL' }]} />
+              <Field label="Days to add (or a minus to take away)"><input inputMode="decimal" className="input tnum" placeholder="2 or -1.5" value={f.days} onChange={ev => setF({ ...f, days: ev.target.value.replace(/[^0-9.+-]/g, '') })} /></Field>
+            </div>
+            <Field label="Reason" error={act.error} hint="Kept in the audit log and shown to the employee."><input className={cx('input', act.error && 'invalid')} value={f.note} onChange={ev => setF({ ...f, note: ev.target.value })} /></Field>
+            <Button variant="primary" type="submit" state={act.state} disabled={!f.days || !Number(f.days)}>Save adjustment</Button>
+          </form>
+        )}
+        <Load q={q} skeleton={<SkeletonRows rows={5} />}>
+          {l => (
+            <div>
+              <div className="mb-2 flex items-baseline justify-between gap-3"><span className="font-semibold">Entries</span><span className="text-[13px] text-slate tnum">CL {fmtNum(l.balances.cl.balance)} · PL {fmtNum(l.balances.pl.balance)}</span></div>
+              {l.items.length === 0 ? <Empty icon="calendar" title="No entries yet" text="The first credit is written on the 1st of the first full month after joining." /> : (
+                <ul className="divide-y divide-mist rounded-lg border border-mist">
+                  {l.items.map(x => (
+                    <li key={x.id} className="flex items-start gap-3 px-3 py-2">
+                      <span className="min-w-0 flex-1"><span className="block font-medium">{LEDGER_LABEL[x.reason] ?? x.reason}{x.reason === 'adjustment' && x.ref ? `: ${x.ref}` : x.reason === 'credit' && x.ref ? ` · ${fmtMonth(x.ref)}` : ''}</span><span className="block text-[13px] text-slate">{fmtDate(x.date)} {x.date.slice(0, 4)} · {x.byName}</span></span>
+                      <Tag>{x.type}</Tag><span className={cx('w-12 text-right font-semibold tnum', x.days < 0 && 'text-absent')}>{x.days > 0 ? '+' : ''}{fmtNum(x.days)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {l.total > l.items.length && <p className="mt-2 text-[13px] text-slate">Showing the latest {l.items.length} of {l.total} entries.</p>}
+              <p className="mt-2 text-[13px] text-slate">The balance is the sum of these entries. Nothing else changes it.</p>
+            </div>
+          )}
+        </Load>
+      </div>
+    </Drawer>
   );
 }
 function SalaryForm({ id, current, onDone }: { id: string; current: number; onDone: () => void }) {
@@ -269,16 +325,16 @@ function SalaryForm({ id, current, onDone }: { id: string; current: number; onDo
   );
 }
 function EditDetails({ open, onClose, e, onSaved }: { open: boolean; onClose: () => void; e: EmployeeRow; onSaved: () => void }) {
-  const init = () => ({ name: e.name, email: e.email, phone: e.phone, designation: e.designation, joinDate: e.joinDate, clQuota: e.clQuota, plQuota: e.plQuota, terminalUserId: e.terminalUserId });
+  const init = () => ({ name: e.name, email: e.email, phone: e.phone, designation: e.designation, joinDate: e.joinDate, lastWorkingDate: e.lastWorkingDate ?? '', clQuota: e.clQuota, plQuota: e.plQuota, terminalUserId: e.terminalUserId });
   const [f, setF] = useState(init);
   const [wasOpen, setWasOpen] = useState(false);
   if (open !== wasOpen) { setWasOpen(open); if (open) setF(init()); }
-  const act = useAction(async () => { await api.updateEmployee(e.id, f); onSaved(); });
+  const act = useAction(async () => { await api.updateEmployee(e.id, { ...f, lastWorkingDate: f.lastWorkingDate || null, terminalUserId: f.terminalUserId || undefined }); onSaved(); });
   const txt = (k: 'name' | 'email' | 'phone' | 'designation' | 'terminalUserId', label: string, hint?: string) => (
     <Field label={label} hint={hint}><input className="input" value={f[k]} onChange={ev => setF({ ...f, [k]: ev.target.value })} /></Field>
   );
   return (
-    <Drawer open={open} onClose={onClose} title="Edit details" sub={`${e.name} · ${e.id}`} footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button variant="primary" state={act.state} onClick={() => act.run()}>Save</Button></>}>
+    <Drawer open={open} onClose={onClose} title="Edit details" sub={`${e.name} · ${e.code}`} footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button variant="primary" state={act.state} onClick={() => act.run()}>Save</Button></>}>
       <div className="space-y-4">
         {txt('name', 'Full name')}{txt('email', 'Work email')}
         <div className="grid grid-cols-2 gap-3">{txt('phone', 'Phone')}{txt('designation', 'Designation')}</div>
@@ -286,6 +342,7 @@ function EditDetails({ open, onClose, e, onSaved }: { open: boolean; onClose: ()
           <Field label="Joining date"><input type="date" className="input" value={f.joinDate} onChange={ev => setF({ ...f, joinDate: ev.target.value })} /></Field>
           {txt('terminalUserId', 'Terminal user ID', 'The number enrolled on the device.')}
         </div>
+        <Field label="Last working date" hint="Leave empty while the person works here. Salary is paid up to this date."><input type="date" className="input" min={f.joinDate} value={f.lastWorkingDate} onChange={ev => setF({ ...f, lastWorkingDate: ev.target.value })} /></Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="CL per year"><input type="number" min={0} className="input tnum" value={f.clQuota} onChange={ev => setF({ ...f, clQuota: Number(ev.target.value) })} /></Field>
           <Field label="PL per year"><input type="number" min={0} className="input tnum" value={f.plQuota} onChange={ev => setF({ ...f, plQuota: Number(ev.target.value) })} /></Field>
@@ -301,12 +358,18 @@ function EditDetails({ open, onClose, e, onSaved }: { open: boolean; onClose: ()
 export function Offices() {
   const nav = useNavigate();
   const { setScope } = useScope();
-  const q = useData(() => api.offices(), []);
-  const people = useData(() => api.employees({ scope: 'all' }), []);
+  const { user } = useAuth();
+  const q = useOffices(user!.id);
+  const people = useEmployees('all');
   const toast = useToast();
-  const [edit, setEdit] = useState<OfficeSummary | null>(null);
-  const [form, setForm] = useState({ name: '', address: '' });
-  const saveAct = useAction(async () => { await api.updateOffice(edit!.id, form); setEdit(null); q.reload(); toast.show('Office saved.'); });
+  // `edit` is an office being changed, or 'new' for the Add office drawer.
+  const [edit, setEdit] = useState<OfficeSummary | 'new' | null>(null);
+  const blankOffice = { name: '', address: '', startTime: '09:00', fullDayHours: 9, minHalfDayHours: 4.5 };
+  const [form, setForm] = useState(blankOffice);
+  const saveAct = useAction(async () => {
+    if (edit === 'new') await api.createOffice(form); else await api.updateOffice((edit as OfficeSummary).id, form);
+    setEdit(null); q.reload(); toast.show(edit === 'new' ? `${form.name} added. Add its people, then choose its head.` : 'Office saved.');
+  });
   const changeHead = async (o: OfficeSummary, employeeId: string) => {
     const before = o.headId;
     try {
@@ -316,7 +379,8 @@ export function Offices() {
   };
   return (
     <div>
-      <PageTitle title="Offices and heads" sub="Each head manages one office and is also an employee there. You approve the heads' own requests." />
+      <PageTitle title="Offices and heads" sub="Each head manages one office and is also an employee there. You approve the heads' own requests."
+        actions={<Button variant="primary" icon="plus" onClick={() => { setForm(blankOffice); setEdit('new'); }}>Add office</Button>} />
       <Load q={q} skeleton={<SkeletonRows rows={3} />}>
         {offices => (
           <div className="stagger grid gap-4 lg:grid-cols-3">
@@ -324,12 +388,13 @@ export function Offices() {
               <Card key={o.id} className="flex flex-col p-5">
                 <div className="flex items-start justify-between gap-3">
                   <div><h2 className="font-serif text-xl font-semibold">{o.name}</h2><p className="text-[13px] text-slate">{o.address}</p></div>
-                  <Button size="sm" variant="ghost" onClick={() => { setForm({ name: o.name, address: o.address }); setEdit(o); }}>Edit</Button>
+                  <Button size="sm" variant="ghost" onClick={() => { setForm({ name: o.name, address: o.address, startTime: o.startTime, fullDayHours: o.fullDayHours, minHalfDayHours: o.halfDayHours }); setEdit(o); }}>Edit</Button>
                 </div>
                 <div className="mt-4 flex items-center gap-4 text-[13px]">
                   <span><span className="font-serif text-2xl font-semibold tnum">{o.headcount}</span> people</span>
-                  <span className="flex items-center gap-1.5 text-slate"><span className={cx('h-2 w-2 rounded-full', o.terminal?.online ? 'anim-pulse bg-present' : 'bg-absent')} />Terminal {o.terminal?.online ? 'online' : 'offline'}</span>
+                  <span className="flex items-center gap-1.5 text-slate"><span className={cx('h-2 w-2 rounded-full', o.terminal?.online ? 'anim-pulse bg-present' : 'bg-absent')} />{o.terminal ? `Terminal ${o.terminal.online ? 'online' : 'offline'}` : 'No terminal yet'}</span>
                 </div>
+                <p className="mt-2 text-[13px] text-slate">Starts {fmtTime(o.startTime)} · full day {fmtNum(o.fullDayHours)} h · half day {fmtNum(o.halfDayHours)} h</p>
                 <Field label="Office head" className="mt-4">
                   <select className="input" value={o.headId ?? ''} onChange={e => changeHead(o, e.target.value)}>
                     {!o.headId && <option value="">Choose a head</option>}
@@ -345,10 +410,17 @@ export function Offices() {
           </div>
         )}
       </Load>
-      <Drawer open={!!edit} onClose={() => setEdit(null)} title="Edit office" footer={<><Button variant="ghost" onClick={() => setEdit(null)}>Cancel</Button><Button variant="primary" state={saveAct.state} onClick={() => saveAct.run()}>Save</Button></>}>
+      <Drawer open={!!edit} onClose={() => setEdit(null)} title={edit === 'new' ? 'Add office' : 'Edit office'} footer={<><Button variant="ghost" onClick={() => setEdit(null)}>Cancel</Button><Button variant="primary" state={saveAct.state} onClick={() => saveAct.run()}>Save</Button></>}>
         <div className="space-y-4">
           <Field label="Name"><input className="input" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></Field>
-          <Field label="Address" error={saveAct.error}><input className="input" value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} /></Field>
+          <Field label="Address"><input className="input" value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} /></Field>
+          <Field label="Office starts at" hint="A first punch after this minute makes the day a half day."><input type="time" className="input" value={form.startTime} onChange={e => setForm({ ...form, startTime: e.target.value })} /></Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Full day (hours)"><input type="number" min={1} step={0.5} className="input tnum" value={form.fullDayHours} onChange={e => setForm({ ...form, fullDayHours: Number(e.target.value) })} /></Field>
+            <Field label="Half day (hours)"><input type="number" min={0.5} step={0.5} className="input tnum" value={form.minHalfDayHours} onChange={e => setForm({ ...form, minHalfDayHours: Number(e.target.value) })} /></Field>
+          </div>
+          {saveAct.error && <p className="anim-fade-up text-absent" role="alert">{saveAct.error}</p>}
+          <p className="text-[13px] text-slate">A change to the hours applies to months that are not locked yet.</p>
         </div>
       </Drawer>
     </div>

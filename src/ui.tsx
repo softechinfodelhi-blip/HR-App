@@ -2,6 +2,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { Month } from './types';
+import type { Query } from './api/hooks';
 import { addMonths, fmtMonth, initials } from './lib/format';
 
 export function cx(...a: (string | false | null | undefined)[]) { return a.filter(Boolean).join(' '); }
@@ -235,24 +236,8 @@ export function ErrorBox({ error, onRetry }: { error: unknown; onRetry?: () => v
 }
 
 // ---------- data loading ----------
-export interface Query<T> { data: T | undefined; error: unknown; loading: boolean; reload: () => Promise<void>; }
-/** Loads on mount and when deps change. `reload` refreshes without showing the skeleton again. */
-export function useData<T>(fn: () => Promise<T>, deps: unknown[], pollMs?: number): Query<T> {
-  const [s, set] = useState<{ data: T | undefined; error: unknown; loading: boolean }>({ data: undefined, error: null, loading: true });
-  const ver = useRef(0); const ref = useRef(fn); ref.current = fn;
-  const load = useCallback((quiet: boolean) => {
-    const v = ++ver.current;
-    if (!quiet) set(p => ({ ...p, loading: true, error: null }));
-    return ref.current().then(
-      data => { if (v === ver.current) set({ data, error: null, loading: false }); },
-      error => { if (v === ver.current) set(p => ({ data: quiet ? p.data : undefined, error: quiet && p.data !== undefined ? null : error, loading: false })); },
-    );
-  }, []);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { load(false); return () => { ver.current++; }; }, deps);
-  useEffect(() => { if (!pollMs) return; const t = setInterval(() => load(true), pollMs); return () => clearInterval(t); }, [pollMs, load]);
-  return { ...s, reload: () => load(true) };
-}
+// The data hooks are in api/hooks.ts. <Load> turns one into a skeleton, an error box with Retry, or the content.
+export type { Query } from './api/hooks';
 export function Load<T>({ q, skeleton, children }: { q: Query<T>; skeleton?: ReactNode; children: (data: T) => ReactNode }) {
   if (q.data !== undefined) return <div className={cx('transition-opacity duration-200', q.loading && 'opacity-60')}>{children(q.data)}</div>;
   if (q.error) return <ErrorBox error={q.error} onRetry={q.reload} />;

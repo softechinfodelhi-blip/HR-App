@@ -2,14 +2,15 @@
 import { Fragment, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../../api';
+import { useAudit, useLockSummary, usePayroll, usePayrollOverview, usePayslip, usePayslips, useSettings } from '../../api/hooks';
 import { useAuth } from '../../auth';
-import { addMonths, fmtDate, fmtDateTime, fmtDays, fmtMoney, fmtMonth, fmtMonthName, fmtNum, fmtTime, monthDays, monthOf } from '../../lib/format';
+import { addMonths, fmtDate, fmtDateTime, fmtDays, fmtMoney, fmtMonth, fmtMonthName, fmtNum, fmtTime, monthDays, monthOf, nowLocal, thisMonth } from '../../lib/format';
 import { DayDrawer, PayslipSheet, RequestItem, useScope } from '../../shared';
 import type { PayrollData } from '../../types';
-import { Avatar, Bar, Button, Card, CountUp, cx, Empty, errText, HoldButton, Icon, Load, MonthPicker, PageTitle, SectionTitle, Skeleton, SkeletonRows, Tag, useAction, useData, useToast } from '../../ui';
+import { Avatar, Bar, Banner, Button, Card, CountUp, cx, Empty, errText, HoldButton, Icon, Load, MonthPicker, PageTitle, SectionTitle, Skeleton, SkeletonRows, Tag, useAction, useToast } from '../../ui';
 
 /** In the first days of a month people are closing the previous one, so open that. */
-const defaultMonth = () => { const t = api.demo.now(); const m = monthOf(t); return Number(t.slice(8, 10)) <= 10 ? addMonths(m, -1) : m; };
+const defaultMonth = () => { const t = nowLocal(); const m = monthOf(t); return Number(t.slice(8, 10)) <= 10 ? addMonths(m, -1) : m; };
 
 export function Payroll() {
   const { scope, setScope } = useScope();
@@ -17,14 +18,14 @@ export function Payroll() {
   return (
     <div>
       <PageTitle title="Payroll" sub="Net pay = salary − day rate × unpaid days. Day rate = salary ÷ calendar days in the month."
-        actions={<MonthPicker month={month} onChange={setMonth} max={monthOf(api.demo.now())} min="2026-10" />} />
+        actions={<MonthPicker month={month} onChange={setMonth} max={thisMonth()} />} />
       {scope === 'all' ? <Overview month={month} open={setScope} /> : <OfficeMonth key={`${scope}|${month}`} officeId={scope} month={month} />}
     </div>
   );
 }
 
 function Overview({ month, open }: { month: string; open: (officeId: string) => void }) {
-  const q = useData(() => api.payrollOverview(month), [month]);
+  const q = usePayrollOverview(month);
   return (
     <Load q={q} skeleton={<SkeletonRows rows={3} />}>
       {rows => (
@@ -48,7 +49,7 @@ function Overview({ month, open }: { month: string; open: (officeId: string) => 
 }
 
 function OfficeMonth({ officeId, month }: { officeId: string; month: string }) {
-  const q = useData(() => api.payroll(officeId, month), [officeId, month]);
+  const q = usePayroll(officeId, month);
   const [justLocked, setJustLocked] = useState(false);
   return (
     <Load q={q} skeleton={<><div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">{[0, 1, 2, 3].map(i => <Skeleton key={i} className="h-[92px] !rounded-xl" />)}</div><SkeletonRows rows={8} /></>}>
@@ -97,6 +98,7 @@ function Checklist({ d, reload, onLocked }: { d: PayrollData; reload: () => Prom
       <Card className="overflow-hidden">
         <div className="px-4 pt-4"><Bar value={done / 3} /></div>
         {!d.monthClosed && <p className="px-4 pt-3 text-[13px] text-slate">{name} is still running. These figures are so far. You can lock it from {fmtDate(addMonths(d.month, 1) + '-01')}.</p>}
+        {d.blockers.map(b => <div key={b} className="px-4 pt-3"><Banner tone="absent">{b} Set it on the person's profile.</Banner></div>)}
         <ol className="divide-y divide-mist">
           <Step n={1} ok={steps[0]} title={steps[0] ? 'No missing punches' : `Resolve ${d.missing.length} missing ${d.missing.length === 1 ? 'punch' : 'punches'}`}>
             {d.missing.length > 0 && (
@@ -104,8 +106,8 @@ function Checklist({ d, reload, onLocked }: { d: PayrollData; reload: () => Prom
                 {d.missing.map(m => m.request ? <RequestItem key={m.employeeId + m.date} r={m.request} onChanged={reload} /> : (
                   <div key={m.employeeId + m.date} className="flex flex-wrap items-center gap-3 px-4 py-3">
                     <Avatar name={m.name} />
-                    <span className="min-w-0 flex-1 basis-48"><span className="block font-semibold">{m.name}</span><span className="block text-[13px] text-slate">{fmtDate(m.date)} · in {fmtTime(m.inTime)}, no punch out · no request sent yet</span></span>
-                    <Button size="sm" onClick={() => setDay({ employeeId: m.employeeId, date: m.date })}>Enter the out time</Button>
+                    <span className="min-w-0 flex-1 basis-48"><span className="block font-semibold">{m.name}</span><span className="block text-[13px] text-slate">{fmtDate(m.date)} · {m.inTime ? `in ${fmtTime(m.inTime)}, no punch out` : `out ${fmtTime(m.outTime)}, no punch in`} · no request sent yet</span></span>
+                    <Button size="sm" onClick={() => setDay({ employeeId: m.employeeId, date: m.date })}>{m.inTime ? 'Enter the out time' : 'Enter the in time'}</Button>
                   </div>
                 ))}
               </div>
@@ -139,6 +141,8 @@ function Locked({ d, fresh, reload }: { d: PayrollData; fresh: boolean; reload: 
   const [asking, setAsking] = useState(false);
   const [reason, setReason] = useState('');
   const unlock = useAction(async () => { await api.unlockMonth(d.officeId, d.month, reason); setAsking(false); await reload(); toast.show(`${fmtMonth(d.month)} is unlocked. Payslips are withdrawn.`); });
+  const [showSummary, setShowSummary] = useState(false);
+  const summary = useLockSummary(d.officeId, d.month, showSummary);
   return (
     <Card className="mb-6 p-5">
       <div className="flex flex-wrap items-center gap-4">
@@ -147,6 +151,7 @@ function Locked({ d, fresh, reload }: { d: PayrollData; fresh: boolean; reload: 
           <div className="font-serif text-xl font-semibold">{fresh ? 'All done. ' : ''}{fmtMonth(d.month)} is locked</div>
           <p className="text-slate">Locked by {d.lockedByName} on {d.lockedAt && fmtDateTime(d.lockedAt)}. Payslips are released to {d.totals.people} people.</p>
         </div>
+        <Button variant="ghost" onClick={() => setShowSummary(s => !s)}>{showSummary ? 'Hide summary' : 'Lock summary'}</Button>
         <Link to="/payroll/payslips" className="btn btn-secondary">View payslips</Link>
         {d.canUnlock && !asking && <Button variant="ghost" onClick={() => setAsking(true)}>Unlock</Button>}
       </div>
@@ -159,6 +164,28 @@ function Locked({ d, fresh, reload }: { d: PayrollData; fresh: boolean; reload: 
           <Button variant="danger" type="submit" state={unlock.state}>Unlock month</Button>
           <Button variant="ghost" onClick={() => setAsking(false)}>Cancel</Button>
         </form>
+      )}
+      {showSummary && (
+        <div className="anim-fade-up mt-4 border-t border-mist pt-4">
+          <Load q={summary} skeleton={<Skeleton className="h-24 w-full" />}>
+            {s => (
+              <div className="grid gap-x-10 gap-y-4 md:grid-cols-2">
+                {([
+                  ['Attendance corrections', s.corrections.map(c => `${c.employeeName}, ${fmtDate(c.date)}: ${c.detail}. ${c.direct ? 'Entered' : 'Approved'} by ${c.byName}. “${c.reason}”`)],
+                  ['Leave balance adjustments', s.balanceAdjustments.map(c => `${c.detail} (${c.byName})`)],
+                  ['Leave quota changes', s.quotaChanges.map(c => `${c.detail} (${c.byName})`)],
+                  ['Salary changes', s.salaryChanges.map(c => `${c.detail} (${c.byName})`)],
+                ] as const).map(([title, lines]) => (
+                  <div key={title}>
+                    <div className="mb-1 text-[12px] font-semibold uppercase tracking-wide text-slate">{title} · {lines.length}</div>
+                    {lines.length === 0 ? <p className="text-slate">None this month.</p> : <ul className="divide-y divide-mist">{lines.map((l, i) => <li key={i} className="py-1.5 text-[13px]">{l}</li>)}</ul>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </Load>
+          <p className="mt-3 text-[13px] text-slate">Every change made by hand for {fmtMonth(d.month)}. The same summary was emailed to the admin when the month was locked.</p>
+        </div>
       )}
     </Card>
   );
@@ -189,7 +216,7 @@ function Table({ d }: { d: PayrollData }) {
               <Fragment key={r.employeeId}>
                 <tr onClick={() => setOpen(o => (o === r.employeeId ? null : r.employeeId))} className="cursor-pointer transition-colors hover:bg-ivory" aria-expanded={open === r.employeeId}>
                   <td className="px-4 py-3">
-                    <span className="flex items-center gap-2"><Icon name={open === r.employeeId ? 'down' : 'right'} size={14} className="text-slate" /><span><span className="block font-medium">{r.name}</span><span className="block text-[13px] text-slate">{r.employeeId}</span></span>
+                    <span className="flex items-center gap-2"><Icon name={open === r.employeeId ? 'down' : 'right'} size={14} className="text-slate" /><span><span className="block font-medium">{r.name}</span><span className="block text-[13px] text-slate">{r.code}</span></span>
                       {r.missing > 0 && <Tag tone="absent">Missing punch</Tag>}</span>
                   </td>
                   <td className="hidden px-3 py-3 text-right tnum sm:table-cell">{fmtMoney(r.salary)}</td>
@@ -240,11 +267,11 @@ function Table({ d }: { d: PayrollData }) {
 // =====================================================================
 export function Payslips() {
   const { scope, label } = useScope();
-  const [month, setMonth] = useState(() => addMonths(monthOf(api.demo.now()), -1));
-  const q = useData(() => api.payslips(scope, month), [scope, month]);
+  const [month, setMonth] = useState(() => addMonths(thisMonth(), -1));
+  const q = usePayslips(scope, month);
   return (
     <div>
-      <PageTitle title="Payslips" sub={label} actions={<MonthPicker month={month} onChange={setMonth} max={monthOf(api.demo.now())} min="2026-10" />} />
+      <PageTitle title="Payslips" sub={label} actions={<MonthPicker month={month} onChange={setMonth} max={thisMonth()} />} />
       <Load q={q} skeleton={<SkeletonRows rows={6} />}>
         {rows => (
           <Card>
@@ -253,7 +280,7 @@ export function Payslips() {
                 {rows.map(p => (
                   <li key={p.employeeId}>
                     <Link to={`/payroll/payslips/${p.employeeId}/${p.month}`} className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-ivory">
-                      <Avatar name={p.name} /><span className="min-w-0 flex-1"><span className="block font-medium">{p.name}</span><span className="block text-[13px] text-slate">{p.employeeId}{p.unpaidDays > 0 && ` · ${fmtDays(p.unpaidDays)} unpaid`}</span></span>
+                      <Avatar name={p.name} /><span className="min-w-0 flex-1"><span className="block font-medium">{p.name}</span><span className="block text-[13px] text-slate">{p.code}{p.unpaidDays > 0 && ` · ${fmtDays(p.unpaidDays)} unpaid`}</span></span>
                       <span className="font-semibold tnum">{fmtMoney(p.net)}</span><Icon name="right" size={16} className="text-slate" />
                     </Link>
                   </li>
@@ -274,14 +301,14 @@ export function PayslipPage() {
   const p = useParams();
   const employeeId = p.employeeId ?? user!.id;
   const month = p.month ?? '';
-  const q = useData(() => api.payslip(employeeId, month), [employeeId, month]);
+  const q = usePayslip(employeeId, month);
   const pdf = api.payslipPdfUrl(employeeId, month);
   return (
     <div>
       <div className="no-print mb-4 flex flex-wrap items-center gap-3">
         <button onClick={() => nav(-1)} className="inline-flex items-center gap-1 text-[13px] font-medium text-slate hover:text-ink"><Icon name="left" size={14} />Back</button>
         <span className="flex-1" />
-        {pdf ? <a className="btn btn-primary" href={pdf}>Download PDF</a> : <Button variant="primary" icon="print" onClick={() => window.print()}>Print or save as PDF</Button>}
+        {q.data && <a className="btn btn-primary" href={pdf} target="_blank" rel="noreferrer">Download PDF</a>}
       </div>
       <Load q={q} skeleton={<Skeleton className="mx-auto h-[600px] w-full max-w-[794px]" />}>{slip => <PayslipSheet slip={slip} />}</Load>
     </div>
@@ -292,10 +319,10 @@ export function PayslipPage() {
 // Settings (opened from the profile menu)
 // =====================================================================
 export function Organisation() {
-  const q = useData(() => api.settings(), []);
+  const q = useSettings();
   const toast = useToast();
-  const [f, setF] = useState<{ companyName: string; defaultClQuota: number; defaultPlQuota: number } | null>(null);
-  const v = f ?? (q.data ? { companyName: q.data.companyName, defaultClQuota: q.data.defaultClQuota, defaultPlQuota: q.data.defaultPlQuota } : null);
+  const [f, setF] = useState<{ companyName: string; defaultClQuota: number; defaultPlQuota: number; plCarryMax: number; escalateAfterWorkingDays: number } | null>(null);
+  const v = f ?? (q.data ? { companyName: q.data.companyName, defaultClQuota: q.data.defaultClQuota, defaultPlQuota: q.data.defaultPlQuota, plCarryMax: q.data.plCarryMax, escalateAfterWorkingDays: q.data.escalateAfterWorkingDays } : null);
   const save = useAction(async () => { await api.updateSettings(v!); await q.reload(); setF(null); toast.show('Settings saved.'); });
   return (
     <div>
@@ -310,6 +337,10 @@ export function Organisation() {
                 <div className="grid grid-cols-2 gap-3">
                   <label className="block"><span className="mb-1 block text-[13px] font-medium">Default CL per year</span><input type="number" min={0} className="input tnum" value={v.defaultClQuota} onChange={e => setF({ ...v, defaultClQuota: Number(e.target.value) })} /></label>
                   <label className="block"><span className="mb-1 block text-[13px] font-medium">Default PL per year</span><input type="number" min={0} className="input tnum" value={v.defaultPlQuota} onChange={e => setF({ ...v, defaultPlQuota: Number(e.target.value) })} /></label>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="block"><span className="mb-1 block text-[13px] font-medium">PL carried over, at most</span><input type="number" min={0} className="input tnum" value={v.plCarryMax} onChange={e => setF({ ...v, plCarryMax: Number(e.target.value) })} /></label>
+                  <label className="block"><span className="mb-1 block text-[13px] font-medium">Escalate after (working days)</span><input type="number" min={1} className="input tnum" value={v.escalateAfterWorkingDays} onChange={e => setF({ ...v, escalateAfterWorkingDays: Number(e.target.value) })} /></label>
                 </div>
                 {save.error && <p className="text-absent">{save.error}</p>}
                 <Button variant="primary" state={save.state} disabled={!f} onClick={() => save.run()}>Save</Button>
@@ -329,7 +360,7 @@ export function Organisation() {
                   ['Month lock', 'Each head locks their office. Missing punches block the lock. Only the admin can unlock.'],
                 ].map(([k, t]) => <div key={k} className="flex gap-4 px-4 py-3"><span className="w-32 shrink-0 font-medium">{k}</span><span className="text-slate">{t}</span></div>)}
               </Card>
-              <p className="mt-2 text-[13px] text-slate">These rules are fixed in the system. Changing one is a code change, so past months stay consistent.</p>
+              <p className="mt-2 text-[13px] text-slate">Office hours are set per office, under People, Offices and heads. The other rules are fixed in the system, so past months stay consistent.</p>
             </section>
           </div>
         )}
@@ -341,7 +372,7 @@ export function Organisation() {
 export function AuditLog() {
   const { scope, label, offices } = useScope();
   const [search, setSearch] = useState('');
-  const q = useData(() => api.audit({ scope, search }), [scope, search]);
+  const q = useAudit(scope, search);
   return (
     <div>
       <PageTitle title="Audit log" sub={`${label} · Every approval, correction, salary change and lock, with who did it.`} />

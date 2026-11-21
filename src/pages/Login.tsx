@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Navigate, useNavigate, useParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api';
 import { homeFor, useAuth } from '../auth';
-import { Button, cx, ErrorBox, Field, Icon, Skeleton, useAction, useData } from '../ui';
+import { useInvite } from '../api/hooks';
+import { Button, cx, ErrorBox, Field, Icon, Skeleton, useAction } from '../ui';
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
@@ -23,12 +24,6 @@ function Shell({ children }: { children: React.ReactNode }) {
   );
 }
 
-const DEMO = [
-  { label: 'Admin', name: 'Anita Verma', email: 'anita.verma@sbm.example' },
-  { label: 'Office head', name: 'Vikram Singh, Office 1', email: 'vikram.singh@sbm.example' },
-  { label: 'Employee', name: 'Priya Nair, Office 1', email: 'priya.nair@sbm.example' },
-];
-
 export function Login() {
   const { user, signIn } = useAuth();
   const nav = useNavigate();
@@ -48,42 +43,67 @@ export function Login() {
         </Field>
         <Button variant="primary" type="submit" state={act.state} className="w-full">Sign in</Button>
       </form>
-      <p className="mt-3 text-[13px] text-slate">Forgot your password? Ask your office head to send a new invite link.</p>
-      <div className="mt-8 rounded-xl border border-mist bg-white p-4">
-        <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate">Demo accounts, one click</div>
-        <div className="space-y-2">
-          {DEMO.map(d => (
-            <button key={d.email} onClick={() => { setEmail(d.email); setPassword('demo1234'); act.run(d.email, 'demo1234'); }}
-              className="flex w-full items-center gap-3 rounded-lg border border-mist px-3 py-2 text-left transition-colors hover:border-slate">
-              <span className="flex-1"><span className="block font-medium">{d.label}</span><span className="block text-[13px] text-slate">{d.name}</span></span>
-              <Icon name="right" size={16} className="text-slate" />
-            </button>
-          ))}
-        </div>
-      </div>
+      <p className="mt-3 text-[13px] text-slate"><Link to="/forgot" className="border-b border-dashed border-slate font-medium hover:text-ink">Forgot your password?</Link> There is no sign up here: your office head adds you.</p>
     </Shell>
   );
 }
 
-/** The link in the invite email opens this. The new employee picks a password and lands on their home. */
-export function SetPassword() {
+/** Asks for the work email and sends a reset link. The answer is the same whether or not the address is known. */
+export function ForgotPassword() {
+  const [email, setEmail] = useState('');
+  const [sent, setSent] = useState(false);
+  const act = useAction(async () => { await api.forgotPassword(email); setSent(true); });
+  return (
+    <Shell>
+      <div className="mb-8 font-serif text-xl font-semibold lg:hidden">SBM Management</div>
+      {sent ? (
+        <>
+          <span className="anim-pop flex h-14 w-14 items-center justify-center rounded-full bg-present text-white"><Icon name="check" size={28} /></span>
+          <h1 className="mt-4 font-serif text-[28px] font-semibold">Check your email</h1>
+          <p className="mt-1 text-slate">If {email} is registered, a link to choose a new password is on its way. It works once and is valid for one hour.</p>
+          <Link to="/login" className="btn btn-secondary mt-6">Back to sign in</Link>
+        </>
+      ) : (
+        <>
+          <h1 className="font-serif text-[28px] font-semibold">Forgot your password?</h1>
+          <p className="mt-1 text-slate">Enter your work email and we will send you a link to choose a new one.</p>
+          <form className="mt-6 space-y-4" onSubmit={e => { e.preventDefault(); act.run(); }}>
+            <Field label="Email" error={act.error}><input autoFocus className={cx('input', act.error && 'invalid')} type="email" autoComplete="username" value={email} onChange={e => setEmail(e.target.value)} required /></Field>
+            <Button variant="primary" type="submit" state={act.state} className="w-full">Send the link</Button>
+          </form>
+          <p className="mt-3 text-[13px] text-slate"><Link to="/login" className="border-b border-dashed border-slate font-medium hover:text-ink">Back to sign in</Link></p>
+        </>
+      )}
+    </Shell>
+  );
+}
+
+/**
+ * The link in the invite email opens this: the new employee picks a password and lands on their home.
+ * The link in a reset email opens the same form.
+ */
+export function SetPassword({ kind = 'invite' }: { kind?: 'invite' | 'reset' }) {
   const { token = '' } = useParams();
   const { setUser } = useAuth();
   const nav = useNavigate();
-  const q = useData(() => api.invite(token), [token]);
+  const q = useInvite(token, kind);
   const [pw, setPw] = useState('');
   const [again, setAgain] = useState('');
   const [touched, setTouched] = useState({ pw: false, again: false });
   const pwErr = touched.pw && pw.length < 8 ? 'Use at least 8 characters.' : '';
   const againErr = touched.again && again !== pw ? 'The two passwords do not match.' : '';
-  const act = useAction(async () => { const u = await api.setPassword(token, pw); setUser(u); nav('/me', { replace: true }); });
+  const act = useAction(async () => {
+    const u = kind === 'invite' ? await api.setPassword(token, pw) : await api.resetPassword(token, pw);
+    setUser(u); nav(homeFor(u), { replace: true });
+  });
   return (
     <Shell>
-      {q.error ? <ErrorBox error={q.error} /> : !q.data ? <div className="space-y-3"><Skeleton className="h-8 w-48" /><Skeleton className="h-10 w-full" /><Skeleton className="h-10 w-full" /></div> : (
+      {q.error ? <><ErrorBox error={q.error} /><p className="mt-4 text-center text-[13px]"><Link to="/login" className="border-b border-dashed border-slate font-medium text-slate hover:text-ink">Back to sign in</Link></p></>
+        : !q.data ? <div className="space-y-3"><Skeleton className="h-8 w-48" /><Skeleton className="h-10 w-full" /><Skeleton className="h-10 w-full" /></div> : (
         <>
           <div className="mb-8 font-serif text-xl font-semibold lg:hidden">{q.data.companyName}</div>
-          <h1 className="font-serif text-[28px] font-semibold">Welcome, {q.data.name.split(' ')[0]}</h1>
-          <p className="mt-1 text-slate">You have been added to {q.data.officeName}. Choose a password to finish.</p>
+          <h1 className="font-serif text-[28px] font-semibold">{kind === 'invite' ? `Welcome, ${q.data.name.split(' ')[0]}` : 'Choose a new password'}</h1>
+          <p className="mt-1 text-slate">{kind === 'invite' ? `You have been added to ${q.data.officeName}. Choose a password to finish.` : 'You will be signed in, and signed out everywhere else.'}</p>
           <form className="mt-6 space-y-4" onSubmit={e => { e.preventDefault(); setTouched({ pw: true, again: true }); if (pw.length >= 8 && pw === again) act.run(); }}>
             <Field label="Email"><input className="input" value={q.data.email} disabled /></Field>
             <Field label="New password" error={pwErr} hint="At least 8 characters.">

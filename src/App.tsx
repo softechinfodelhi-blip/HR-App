@@ -4,7 +4,7 @@ import { Component, type ReactNode } from 'react';
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { AuthProvider, homeFor, useAuth } from './auth';
 import { AdminLayout, EmployeeLayout } from './layout';
-import { Login, SetPassword } from './pages/Login';
+import { ForgotPassword, Login, SetPassword } from './pages/Login';
 import Home from './pages/admin/Home';
 import { Offices, People, Profile } from './pages/admin/People';
 import { Corrections, Register, Terminals } from './pages/admin/Attendance';
@@ -45,6 +45,8 @@ export function AppRoutes() {
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/invite/:token" element={<SetPassword />} />
+      <Route path="/forgot" element={<ForgotPassword />} />
+      <Route path="/reset/:token" element={<SetPassword kind="reset" />} />
 
       <Route element={<Require roles={staff}><AdminLayout /></Require>}>
         <Route index element={<Home />} />

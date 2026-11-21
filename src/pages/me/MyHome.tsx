@@ -1,14 +1,14 @@
 // Employee home: today's status, the on-time streak, leave balance and anything that needs attention.
 import { Link } from 'react-router-dom';
-import { api } from '../../api';
+import { useMyHome } from '../../api/hooks';
 import { firstName, fmtDate, fmtDateLong, fmtDuration, fmtMoney, fmtMonth, fmtNum, fmtTime, fromMin, toMin } from '../../lib/format';
 import { RULES } from '../../lib/rules';
 import { dayChip, RequestStatus } from '../../shared';
 import type { MyHome as MyHomeData } from '../../types';
-import { Bar, Card, cx, Icon, Load, Ring, SectionTitle, Skeleton, Tag, useData } from '../../ui';
+import { Bar, Card, cx, Icon, Load, Ring, SectionTitle, Skeleton, Tag } from '../../ui';
 
 export default function MyHome() {
-  const q = useData(() => api.myHome(), [], 20000);
+  const q = useMyHome();
   return (
     <Load q={q} skeleton={<div className="space-y-4"><Skeleton className="h-8 w-56" /><Skeleton className="h-56 w-full !rounded-xl" /><Skeleton className="h-40 w-full !rounded-xl" /></div>}>
       {h => {
@@ -112,11 +112,12 @@ function DayCard({ h }: { h: MyHomeData }) {
   );
 }
 
-/** Quiet gamification: a streak of on-time days, the best so far, and four badges. */
+const STREAKS = [10, 25, 50, 100];
+/** Quiet gamification: a streak of on-time days, the best so far, and five badges. Only this person, their head and the admin see it. */
 function StreakCard({ h }: { h: MyHomeData }) {
   const { current, best } = h.streak;
-  const next = [7, 14, 30].find(n => current < n) ?? 30;
-  const milestone = [7, 14, 30].includes(current);
+  const next = STREAKS.find(n => current < n) ?? 100;
+  const milestone = STREAKS.includes(current);
   return (
     <section>
       <SectionTitle>On-time streak</SectionTitle>
@@ -129,8 +130,8 @@ function StreakCard({ h }: { h: MyHomeData }) {
           </div>
           <div className="text-right"><div className="text-[12px] uppercase tracking-wide text-slate">Best</div><div className="font-serif text-xl font-semibold tnum">{best}</div></div>
         </div>
-        <div className="mt-4"><Bar value={Math.min(1, current / next)} /><div className="mt-1 flex justify-between text-[12px] text-slate"><span>{current >= 30 ? '30 in a row and counting' : `${next - current} more ${next - current === 1 ? 'day' : 'days'} to reach ${next} in a row`}</span><span className="tnum">{Math.min(current, next)} of {next}</span></div></div>
-        <div className="mt-4 grid grid-cols-4 gap-2 border-t border-mist pt-4">
+        <div className="mt-4"><Bar value={Math.min(1, current / next)} /><div className="mt-1 flex justify-between text-[12px] text-slate"><span>{current >= 100 ? '100 in a row and counting' : `${next - current} more ${next - current === 1 ? 'day' : 'days'} to reach ${next} in a row`}</span><span className="tnum">{Math.min(current, next)} of {next}</span></div></div>
+        <div className="mt-4 grid grid-cols-5 gap-2 border-t border-mist pt-4">
           {h.badges.map(b => (
             <div key={b.key} className="text-center" title={b.hint}>
               <span className={cx('mx-auto flex h-10 w-10 items-center justify-center rounded-full border-2', b.earned ? 'border-brass bg-brass/15 text-brass' : 'border-dashed border-mist text-off')}><Icon name="star" size={18} /></span>
@@ -153,7 +154,7 @@ function Welcome({ h }: { h: MyHomeData }) {
     <Card className="border-brass/60 p-5">
       <div className="mb-1 h-1 w-10 rounded-full bg-brass" />
       <div className="font-serif text-xl font-semibold">Welcome to {h.employee.officeName}</div>
-      <p className="mt-1 text-slate">You are {h.employee.id}. Three things to know:</p>
+      <p className="mt-1 text-slate">You are {h.employee.code}. Three things to know:</p>
       <ol className="mt-3 space-y-3">
         {items.map(([t, s], i) => <li key={t} className="flex gap-3"><span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-slate text-[12px] font-bold">{i + 1}</span><span><span className="block font-semibold">{t}</span><span className="block text-[13px] text-slate">{s}</span></span></li>)}
       </ol>

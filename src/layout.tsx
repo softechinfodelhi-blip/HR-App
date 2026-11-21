@@ -3,11 +3,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { api } from './api';
+import { useNotifications, useOffices } from './api/hooks';
 import { useAuth } from './auth';
 import { fmtDateTime } from './lib/format';
 import { ScopeCtx } from './shared';
 import type { SearchHit } from './types';
-import { Avatar, cx, Icon, useData, useDismiss } from './ui';
+import { Avatar, cx, Icon, useDismiss } from './ui';
 
 const NAV = [
   { key: '', label: 'Home', to: '/', icon: 'home' },
@@ -29,7 +30,7 @@ export function AdminLayout() {
   const u = user!;
   const loc = useLocation();
   const section = loc.pathname.split('/')[1] ?? '';
-  const officesQ = useData(() => api.offices(), [u.id]);
+  const officesQ = useOffices(u.id);
   const [picked, setPicked] = useState(() => { try { return sessionStorage.getItem('sbm-hr-scope') ?? 'all'; } catch { return 'all'; } });
   const scope = u.role === 'head' ? u.officeId! : picked;
   const setScope = useCallback((s: string) => { setPicked(s); try { sessionStorage.setItem('sbm-hr-scope', s); } catch { /* ignore */ } }, []);
@@ -67,14 +68,14 @@ export function AdminLayout() {
               );
             })}
           </nav>
-          <div className="px-6 py-5 text-[12px] text-white/50">Demo data. Today is set to {fmtDateTime(api.demo.now())}.</div>
+          <div className="px-6 py-5 text-[12px] text-white/50">Internal use only</div>
         </aside>
 
         <header className="no-print sticky top-0 z-20 border-b border-mist bg-ivory/95 backdrop-blur">
           <div className="mx-auto flex h-16 max-w-[1200px] items-center gap-3 px-4 lg:px-8">
             <span className="font-serif text-lg font-semibold lg:hidden">SBM</span>
             <button onClick={() => setSearching(true)} className="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-lg border border-slate bg-white px-3 text-left text-slate transition-colors hover:border-ink sm:max-w-sm">
-              <Icon name="search" size={16} /><span className="flex-1 truncate">Search people and screens</span><kbd className="hidden rounded border border-mist px-1.5 text-[11px] sm:block">Ctrl K</kbd>
+              <Icon name="search" size={16} /><span className="flex-1 truncate">Search people, dates and screens</span><kbd className="hidden rounded border border-mist px-1.5 text-[11px] sm:block">Ctrl K</kbd>
             </button>
             <div className="flex-1 max-sm:hidden" />
             {u.role === 'admin' ? (
@@ -131,7 +132,7 @@ function SearchModal({ scope, onClose }: { scope: string; onClose: () => void })
       <div className="anim-fade-up relative w-full max-w-lg overflow-hidden rounded-xl bg-white shadow-xl">
         <div className="flex items-center gap-3 border-b border-mist px-4">
           <Icon name="search" className="text-slate" />
-          <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="Type a name, an employee ID or a screen"
+          <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="Type a name, an employee ID, a date or a screen"
             className="h-14 flex-1 bg-transparent outline-none placeholder:text-slate"
             onKeyDown={e => {
               if (e.key === 'Escape') onClose();
@@ -142,7 +143,7 @@ function SearchModal({ scope, onClose }: { scope: string; onClose: () => void })
           <kbd className="rounded border border-mist px-1.5 text-[11px] text-slate">Esc</kbd>
         </div>
         <div className="max-h-80 overflow-y-auto p-2">
-          {!q.trim() && <p className="px-3 py-6 text-center text-slate">Try “Priya”, “EMP-0117” or “Payroll”.</p>}
+          {!q.trim() && <p className="px-3 py-6 text-center text-slate">Try a name, an employee ID, “23 Nov” or “Payroll”.</p>}
           {q.trim() && hits.length === 0 && <p className="px-3 py-6 text-center text-slate">Nothing matches “{q}”. Check the spelling or try the employee ID.</p>}
           {hits.map((h, i) => (
             <button key={h.to + h.label} onMouseEnter={() => setSel(i)} onClick={() => go(h)} className={cx('flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left', i === sel && 'bg-ivory')}>
@@ -160,7 +161,7 @@ function SearchModal({ scope, onClose }: { scope: string; onClose: () => void })
 function Bell() {
   const { user } = useAuth();
   const nav = useNavigate();
-  const q = useData(() => api.notifications(), [user!.id], 15000);
+  const q = useNotifications(user!.userId);
   const [open, setOpen] = useState(false);
   const close = useCallback(() => setOpen(false), []);
   const ref = useDismiss(open, close);
@@ -209,20 +210,13 @@ function ProfileMenu({ employee }: { employee?: boolean }) {
         <div className="anim-fade-up absolute right-0 top-12 z-40 w-72 overflow-hidden rounded-xl border border-mist bg-white py-1 shadow-xl">
           <div className="border-b border-mist px-4 py-3">
             <div className="font-semibold">{u.name}</div>
-            <div className="text-[13px] text-slate">{u.role === 'admin' ? 'Admin' : u.role === 'head' ? `Office head · ${u.officeName}` : `${u.id} · ${u.officeName}`}</div>
+            <div className="text-[13px] text-slate">{u.role === 'admin' ? 'Admin' : u.role === 'head' ? `Office head · ${u.officeName}` : `${u.code ?? ''} · ${u.officeName}`}</div>
           </div>
           {u.role === 'head' && !employee && <button className={item} onClick={() => go('/me')}><Icon name="user" size={16} />My attendance, leave and payslips</button>}
           {u.role === 'head' && employee && <button className={item} onClick={() => go('/')}><Icon name="building" size={16} />Back to managing {u.officeName}</button>}
           {employee && <button className={item} onClick={() => go('/me/profile')}><Icon name="user" size={16} />My profile</button>}
           {!employee && u.role === 'admin' && <button className={item} onClick={() => go('/settings')}><Icon name="settings" size={16} />Settings</button>}
           {!employee && <button className={item} onClick={() => go('/settings/audit')}><Icon name="file" size={16} />Audit log</button>}
-          <div className="border-t border-mist px-4 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wide text-slate">Demo clock</div>
-          {api.demo.presets.map(p => (
-            <button key={p.at} className={item} onClick={() => { api.demo.setClock(p.at); close(); window.location.reload(); }}>
-              <Icon name="clock" size={16} /><span className="flex-1">{p.label}</span>{api.demo.clockBase() === p.at && <Icon name="check" size={14} />}
-            </button>
-          ))}
-          <button className={item} onClick={() => { api.demo.reset(); window.location.assign('/login'); }}><Icon name="swap" size={16} />Reset demo data</button>
           <button className={cx(item, 'border-t border-mist')} onClick={async () => { close(); await signOut(); nav('/login'); }}><Icon name="logout" size={16} />Sign out</button>
         </div>
       )}

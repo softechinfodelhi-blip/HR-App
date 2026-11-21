@@ -8,6 +8,7 @@ import { ZodError } from 'zod';
 import { Prisma, prisma } from './db';
 import { isProd } from './env';
 import { HttpError } from './lib/errors';
+import { localDateTime, now } from './lib/time';
 import { loadSession, sameOrigin } from './middleware/auth';
 import { attendanceRoutes, meRoutes } from './routes/attendance';
 import { authRoutes } from './routes/auth';
@@ -23,7 +24,7 @@ import { correctionRoutes, leaveRoutes, myRequestRoutes, requestRoutes } from '.
 import { settingsRoutes } from './routes/settings';
 
 export interface AppOptions {
-  /** Requests per minute per IP on login, invite and reset routes. */
+  /** Sign-in attempts per minute for one email address. The limit per IP address is six times this. */
   authRateLimit?: number;
   /** Folder with the built Vite app. Served when it exists. */
   staticDir?: string;
@@ -47,13 +48,16 @@ export function createApp(opts: AppOptions = {}): Express {
         connectSrc: ["'self'"],
         objectSrc: ["'none'"],
         frameAncestors: ["'none'"],
+        // Only on the real HTTPS site. On http://localhost it would break the page in some browsers.
+        upgradeInsecureRequests: isProd ? [] : null,
       },
     },
   }));
 
   const api = express.Router();
   api.use(express.json({ limit: '100kb' }));
-  api.use((_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
+  // Every answer carries the server's time (office time), so the app shows the right day even on a device with a wrong clock.
+  api.use((_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); res.setHeader('X-Now', localDateTime(now())); next(); });
 
   /** GET /api/health  Railway's health check. */
   api.get('/health', async (_req, res) => {
@@ -65,8 +69,9 @@ export function createApp(opts: AppOptions = {}): Express {
   api.use(loadSession);
 
   const limit = opts.authRateLimit ?? 10;
-  const byIp = rateLimit({ windowMs: 60_000, limit, standardHeaders: true, legacyHeaders: false, message: TOO_MANY });
-  // A second limit per email, so one address cannot be hammered from many IPs.
+  // A whole office shares one IP address, so the limit per IP is generous. It still stops a script.
+  const byIp = rateLimit({ windowMs: 60_000, limit: limit * 6, standardHeaders: true, legacyHeaders: false, message: TOO_MANY });
+  // The strict limit is per email address: this is what stops someone guessing one person's password.
   const byEmail = rateLimit({
     windowMs: 60_000, limit, standardHeaders: false, legacyHeaders: false, message: TOO_MANY,
     keyGenerator: req => `email:${String((req.body as { email?: unknown } | undefined)?.email ?? '').trim().toLowerCase().slice(0, 200)}`,

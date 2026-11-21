@@ -2,13 +2,14 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../../api';
+import { useDay, useEmployee, useMyBalances, useMyMonth, useMyPayslips, useMyRequests } from '../../api/hooks';
 import { useAuth } from '../../auth';
-import { addDays, dow, fmtDate, fmtDateLong, fmtDays, fmtDuration, fmtMoney, fmtMonth, fmtNum, fmtTime, monthOf, parts } from '../../lib/format';
+import { addDays, dow, fmtDate, fmtDateLong, fmtDays, fmtDuration, fmtMoney, fmtMonth, fmtNum, fmtTime, monthOf, parts, todayYmd } from '../../lib/format';
 import { dayChip, RequestStatus } from '../../shared';
-import type { DayView, LeavePreview, LeaveType, RequestRow } from '../../types';
-import { Avatar, Button, Card, cx, Drawer, Empty, errText, Field, Icon, Load, MonthPicker, PageTitle, SectionTitle, Segmented, Skeleton, SkeletonRows, Tag, useAction, useData, useToast } from '../../ui';
+import type { DayView, HalfDay, LeavePreview, LeaveType, RequestRow } from '../../types';
+import { Avatar, Button, Card, cx, Drawer, Empty, errText, Field, Icon, Load, MonthPicker, PageTitle, SectionTitle, Segmented, Skeleton, SkeletonRows, Tag, useAction, useToast } from '../../ui';
 
-const today = () => api.demo.now().slice(0, 10);
+const today = todayYmd;
 const Back = ({ to, label }: { to: string; label: string }) => <Link to={to} className="mb-3 inline-flex items-center gap-1 text-[13px] font-medium text-slate hover:text-ink"><Icon name="left" size={14} />{label}</Link>;
 
 // =====================================================================
@@ -18,12 +19,12 @@ const FILL: Partial<Record<DayView['status'], string>> = {
 };
 export function MyAttendance() {
   const [month, setMonth] = useState(() => monthOf(today()));
-  const q = useData(() => api.myMonth(month), [month], 30000);
+  const q = useMyMonth(month);
   const [pick, setPick] = useState<DayView | null>(null);
   const t = today();
   return (
     <div>
-      <PageTitle title="My attendance" actions={<MonthPicker month={month} onChange={setMonth} max={monthOf(t)} min="2026-10" />} />
+      <PageTitle title="My attendance" actions={<MonthPicker month={month} onChange={setMonth} max={monthOf(t)} />} />
       <Load q={q} skeleton={<><Skeleton className="mb-4 h-16 w-full !rounded-xl" /><Skeleton className="h-80 w-full !rounded-xl" /></>}>
         {m => {
           const lead = (dow(m.days[0].date) + 6) % 7;
@@ -87,7 +88,7 @@ export function MyAttendance() {
 export function Correction() {
   const { date = '' } = useParams();
   const { user } = useAuth();
-  const q = useData(() => api.day(user!.id, date), [date]);
+  const q = useDay(user!.id, date);
   const [f, setF] = useState<{ inTime: string; outTime: string; reason: string } | null>(null);
   const [sent, setSent] = useState(false);
   useEffect(() => { if (q.data && !f) setF({ inTime: q.data.day.inTime ?? '', outTime: q.data.day.outTime ?? '', reason: '' }); }, [q.data, f]);
@@ -132,8 +133,8 @@ export function Correction() {
 // =====================================================================
 export function MyLeave() {
   const toast = useToast();
-  const bal = useData(() => api.myBalances(), []);
-  const q = useData(() => api.myRequests(), []);
+  const bal = useMyBalances();
+  const q = useMyRequests();
   const reload = () => { q.reload(); bal.reload(); };
   const cancel = async (r: RequestRow) => {
     try { await api.cancelRequest(r.id); reload(); toast.show('Request cancelled.', { undo: async () => { await api.undoCancel(r.id); reload(); } }); }
@@ -185,11 +186,13 @@ export function ApplyLeave() {
   const { user } = useAuth();
   const nav = useNavigate();
   const start = addDays(today(), 1);
-  const [f, setF] = useState<{ type: LeaveType; from: string; to: string; half: boolean; reason: string }>({ type: 'CL', from: start, to: start, half: false, reason: '' });
+  const [f, setF] = useState<{ type: LeaveType; from: string; to: string; half: boolean; which: 'first' | 'second'; reason: string }>({ type: 'CL', from: start, to: start, half: false, which: 'first', reason: '' });
+  const halfDay: HalfDay = f.half ? f.which : 'none';
+  const input = { type: f.type, from: f.from, to: f.to, halfDay };
   const [pv, setPv] = useState<LeavePreview | null>(null);
   const [sent, setSent] = useState<RequestRow | null>(null);
-  useEffect(() => { let live = true; api.leavePreview(f).then(p => { if (live) setPv(p); }).catch(() => {}); return () => { live = false; }; }, [f.type, f.from, f.to, f.half]); // eslint-disable-line react-hooks/exhaustive-deps
-  const act = useAction(async () => { setSent(await api.applyLeave(f)); });
+  useEffect(() => { let live = true; api.leavePreview(input).then(p => { if (live) setPv(p); }).catch(() => {}); return () => { live = false; }; }, [f.type, f.from, f.to, halfDay]); // eslint-disable-line react-hooks/exhaustive-deps
+  const act = useAction(async () => { setSent(await api.applyLeave({ ...input, reason: f.reason })); });
   const set = (p: Partial<typeof f>) => setF(prev => { const n = { ...prev, ...p }; if (n.to < n.from) n.to = n.from; if (n.from !== n.to) n.half = false; return n; });
   if (sent) {
     return (
@@ -215,6 +218,7 @@ export function ApplyLeave() {
         <label className={cx('flex items-center gap-2', f.from !== f.to && 'opacity-50')}>
           <input type="checkbox" className="h-4 w-4 accent-[var(--color-ink)]" disabled={f.from !== f.to} checked={f.half} onChange={e => set({ half: e.target.checked })} />Half day only<span className="text-[13px] text-slate">(for a single date)</span>
         </label>
+        {f.half && <div className="anim-fade-up"><Segmented value={f.which} onChange={which => set({ which })} options={[{ value: 'first', label: 'First half' }, { value: 'second', label: 'Second half' }]} /></div>}
         <Card className={cx('p-4 transition-colors duration-200', pv && !pv.ok && 'border-absent/60')}>
           <div className="flex items-end justify-between gap-4">
             <div><div className="text-[13px] text-slate">Working days</div><div className="font-serif text-[30px] font-semibold leading-tight tnum">{pv ? fmtNum(pv.days) : ' '}</div></div>
@@ -234,7 +238,7 @@ export function ApplyLeave() {
 
 // =====================================================================
 export function MyPayslips() {
-  const q = useData(() => api.myPayslips(), []);
+  const q = useMyPayslips();
   return (
     <div>
       <PageTitle title="My payslips" />
@@ -267,7 +271,7 @@ export function MyProfile() {
   const { user, signOut } = useAuth();
   const nav = useNavigate();
   const toast = useToast();
-  const q = useData(() => api.employee(user!.id), [user!.id]);
+  const q = useEmployee(user!.id);
   const [pw, setPw] = useState({ current: '', next: '' });
   const act = useAction(async () => { await api.changePassword(pw.current, pw.next); setPw({ current: '', next: '' }); toast.show('Password changed.'); });
   return (
@@ -278,7 +282,7 @@ export function MyProfile() {
           <div className="space-y-5">
             <Card className="flex items-center gap-4 p-5">
               <Avatar name={d.employee.name} size={52} />
-              <div><div className="font-serif text-xl font-semibold">{d.employee.name}</div><div className="text-slate">{d.employee.id} · {d.employee.designation}</div></div>
+              <div><div className="font-serif text-xl font-semibold">{d.employee.name}</div><div className="text-slate">{d.employee.code} · {d.employee.designation}</div></div>
             </Card>
             <Card className="divide-y divide-mist">
               {[['Office', d.employee.officeName], ['Email', d.employee.email], ['Phone', d.employee.phone || 'Not added'], ['Joined', `${fmtDate(d.employee.joinDate)} ${d.employee.joinDate.slice(0, 4)}`], ['Terminal user ID', d.employee.terminalUserId],

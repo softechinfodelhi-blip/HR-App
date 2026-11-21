@@ -62,3 +62,20 @@ export function fmtDays(n: number): string { return `${fmtNum(n)} ${n === 1 || n
 export function fmtDuration(min: number): string { return `${Math.floor(min / 60)} h ${pad(min % 60)} m`; }
 export function initials(name: string): string { return name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase(); }
 export function firstName(name: string): string { return name.split(' ')[0]; }
+
+// ---------- the clock ----------
+// The office runs on Asia/Kolkata (UTC+5:30, no daylight saving), whatever the time zone of this device.
+// Every API response carries the server's time, so a device with a wrong clock still shows the right day.
+let clockOffsetMs = 0;
+const istOf = (ms: number): LocalDateTime => new Date(ms + 330 * 60000).toISOString().slice(0, 16);
+/** Called by the API client with the server's time ('YYYY-MM-DDTHH:mm', office time). */
+export function syncClock(serverNow: LocalDateTime) {
+  const server = Date.parse(`${serverNow}:00Z`) - 330 * 60000;
+  const diff = server - Date.now();
+  // The server sends whole minutes, so a difference under two minutes is just rounding.
+  clockOffsetMs = Number.isFinite(diff) && Math.abs(diff) > 120000 ? diff : 0;
+}
+/** Now, in office time. */
+export function nowLocal(): LocalDateTime { return istOf(Date.now() + clockOffsetMs); }
+export const todayYmd = (): Ymd => dateOf(nowLocal());
+export const thisMonth = (): Month => monthOf(nowLocal());
