@@ -1,6 +1,7 @@
 import type { Db } from '../db';
 import { Prisma } from '../db';
 import type { Actor } from '../services/permissions';
+import { now } from './time';
 
 export interface AuditInput {
   action: string; // short, shown as the title: 'Salary changed'
@@ -23,7 +24,7 @@ export async function audit(db: Db, actor: Actor | null, a: AuditInput): Promise
     data: {
       actorId: actor?.userId ?? null, actorName: actor?.name ?? 'System', officeId: a.officeId ?? null,
       action: a.action, entity: a.entity, entityId: a.entityId ?? null, detail: a.detail ?? '',
-      oldValue: json(a.old), newValue: json(a.new), sensitive: a.sensitive ?? false,
+      oldValue: json(a.old), newValue: json(a.new), sensitive: a.sensitive ?? false, createdAt: now(),
     },
   });
 }

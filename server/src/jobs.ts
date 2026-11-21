@@ -4,6 +4,7 @@ import { prisma } from './db';
 import { sendQueuedEmails } from './lib/mail';
 import { monthOf, now, today } from './lib/time';
 import { alertSilentTerminals, finalizeDay } from './services/attendance';
+import { refreshGamification } from './services/gamification';
 import { closeLeaveYear, creditLeave, escalateRequests } from './services/leave';
 
 const TZ = 'Asia/Kolkata';
@@ -36,12 +37,13 @@ export function startJobs(): void {
   leave();
   // Every hour from 09:00 to 19:00: requests that have waited too long also go to the admin.
   cron.schedule('0 9-19 * * *', run('escalation', () => escalateRequests(prisma)), { timezone: TZ });
-  // 23:55 every night: store the final attendance of the day for everyone,
-  // then look for terminals that have been silent for over 12 hours on a working day.
+  // 23:55 every night: store the final attendance of the day for everyone, look for terminals that have
+  // been silent for over 12 hours on a working day, then update best streaks and badges.
   cron.schedule('55 23 * * *', run('nightly', async () => {
     const date = today();
     const n = await finalizeDay(prisma, date);
     const silent = await alertSilentTerminals(prisma);
-    console.log(`[job] nightly: ${date} finalized for ${n} people, ${silent} silent terminal alert(s)`);
+    const badges = await refreshGamification(prisma); // best streaks and newly earned badges
+    console.log(`[job] nightly: ${date} finalized for ${n} people, ${silent} silent terminal alert(s), ${badges} badge(s)`);
   }), { timezone: TZ });
 }

@@ -16,6 +16,7 @@ export async function notify(db: Db, userId: string | null | undefined, n: Notif
   if (!userId) return;
   const user = await db.user.findUnique({ where: { id: userId }, select: { email: true } });
   if (!user) return;
+  // The time comes from the database, so notifications written in the same request keep their order in the bell.
   await db.notification.create({ data: { userId, type: n.type, payload: { text: n.text, link: n.link } } });
   await queueEmail(db, user.email, n.text, [n.text, n.emailBody, `Open: ${appLink(n.link)}`].filter(Boolean).join('\n\n'));
 }

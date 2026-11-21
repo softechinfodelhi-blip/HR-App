@@ -14,6 +14,7 @@ import {
 import { sendInvite } from '../services/invites';
 import { adjustBalance, balancesOf } from '../services/leave';
 import { assertCanManage, assertCanView, canManage, canSeeSalary } from '../services/permissions';
+import { profileExtras } from './insights';
 
 const zName = z.string().trim().min(1, 'Enter the full name.').max(120);
 const zQuota = z.coerce.number().min(0, 'A quota cannot be negative.').max(365).multipleOf(0.5, 'Use whole or half days.');
@@ -78,6 +79,7 @@ export function employeeRoutes(): Router {
       }) : [],
       quotas: e.leaveQuotas.filter(q => q.year >= year - 1).sort((x, y) => y.year - x.year).map(q => ({ year: q.year, cl: Number(q.clPerYear), pl: Number(q.plPerYear) })),
       balances: await balancesOf(prisma, e.id),
+      ...(await profileExtras(e.id, a)),
       inviteToken: null, // only the hash is stored. "Send a new invite" makes a fresh link
     });
   });

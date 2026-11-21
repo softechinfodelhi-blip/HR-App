@@ -5,7 +5,7 @@ import { env, isProd, isTest } from '../env';
 import { now } from './time';
 
 export async function queueEmail(db: Db, to: string, subject: string, body: string): Promise<void> {
-  await db.emailOutbox.create({ data: { toEmail: to, subject, body } });
+  await db.emailOutbox.create({ data: { toEmail: to, subject, body, createdAt: now() } });
 }
 
 /** A full link into the app, for email bodies. */

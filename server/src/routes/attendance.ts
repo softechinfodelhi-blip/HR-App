@@ -13,6 +13,7 @@ import { isLocked } from '../services/locks';
 import { assertCanView, canManage } from '../services/permissions';
 import { leaveInclude, leaveRow } from '../services/leave';
 import { correctDirectly, correctionInclude, correctionRow, userNames } from '../services/requests';
+import { officeStats } from './insights';
 import { queueFor } from './requests';
 
 const zTimes = z.object({
@@ -38,6 +39,7 @@ export function attendanceRoutes(): Router {
     const expected = people.filter(p => !['off', 'holiday', 'not_joined'].includes(p.day.status));
     const calendars = await loadCalendars(prisma, offices.map(o => o.id), date, date);
     const kinds = offices.map(o => dayKind(date, calendars.get(o.id)!));
+    const stats = await officeStats(offices.map(o => o.id), monthOf(date));
     const only = kinds.length === 1 ? kinds[0] : null;
     res.json({
       date, time: hhmmOf(t), working: kinds.some(k => k.kind === 'working'),
@@ -52,7 +54,8 @@ export function attendanceRoutes(): Router {
       people,
       offices: offices.map(o => ({
         officeId: o.id, name: o.name, headcount: emps.filter(e => e.officeId === o.id).length,
-        onTime: null as number | null, lastMonth: null as number | null, best: false, // Phase 6
+        onTime: stats.find(s => s.officeId === o.id)?.onTime ?? null, lastMonth: stats.find(s => s.officeId === o.id)?.lastMonth ?? null,
+        best: stats.find(s => s.officeId === o.id)?.best ?? false, // office of the month, by last month's on-time rate
         terminal: terminals.find(x => x.officeId === o.id) ?? null,
       })),
     });
