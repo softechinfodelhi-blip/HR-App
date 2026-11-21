@@ -1,10 +1,10 @@
 # Backend map: screens to endpoints
 
-Status: draft for review, before Phase 1. Nothing is built yet.
+Status: built. All eight phases are done. This file is the map the work followed, with the decisions made along the way.
 
 The frontend reaches data only through `src/api/index.ts` (one function per endpoint, ~60 functions).
-In Phase 7 each body becomes a `fetch` through a typed client, and screens move from `useData` to
-TanStack Query hooks with the same `{ data, error, loading, reload }` shape, so the markup stays the same.
+Each function is a `fetch` through the typed client in `src/api/http.ts`, and screens read through the
+TanStack Query hooks in `src/api/hooks.ts`, which keep the `{ data, error, loading, reload }` shape the markup expects.
 
 Conventions
 - Base `/api`, JSON. Errors are `{ message }` with 401 / 403 / 404 / 409 / 422 (the UI shows `message` as is).

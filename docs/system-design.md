@@ -1,3 +1,5 @@
+> **SUPERSEDED.** This was the plan written before the backend existed. Several things were built differently (see the table in docs/backend-map.md). The code, README.md and docs/backend-map.md are current. Kept for history only.
+
 # SBM Management HR: system design
 
 This document is the build plan for the backend that sits behind the React app in this folder.

@@ -1,3 +1,5 @@
+# SUPERSEDED. This contract was written before the backend existed and no longer matches it.
+# The current endpoints are in docs/backend-map.md and server/src/routes. Kept for history only.
 openapi: 3.0.3
 info:
   title: SBM Management HR API
