@@ -44,13 +44,15 @@ async function main() {
 
   const body = lines();
   const post = await fetch(`${base}/cdata?SN=${encodeURIComponent(sn)}&table=ATTLOG&Stamp=${stamp + body.length}`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: `${body.join('\n')}\n` });
-  console.log(`\nPOST /iclock/cdata table=ATTLOG (${body.length} ${body.length === 1 ? 'line' : 'lines'})  ${post.status}  ${(await post.text()).trim()}`);
+  const answer = (await post.text()).trim();
+  console.log(`\nPOST /iclock/cdata table=ATTLOG (${body.length} ${body.length === 1 ? 'line' : 'lines'})  ${post.status}  ${answer}`);
   body.slice(0, 8).forEach(l => console.log(`  ${l.replace(/\t/g, '  ')}`));
   if (body.length > 8) console.log(`  ... and ${body.length - 8} more`);
 
   const beat = await fetch(`${base}/getrequest?SN=${encodeURIComponent(sn)}`);
   console.log(`\nGET /iclock/getrequest  ${beat.status}  ${(await beat.text()).trim()}`);
-  if (text.includes('ATTLOGStamp=0') && stamp === 0) console.log('\nNote: if nothing shows up in the app, this serial may not be registered. Unknown serials get "OK" and are listed under unregistered terminals.');
+  // A registered terminal is answered with a count. A bare OK means the serial is unknown and nothing was stored.
+  if (answer === 'OK') console.log(`\nNothing was stored: serial ${sn} is not registered. It is now listed under unregistered terminals.`);
 }
 
 main().catch(e => { console.error(`Could not reach ${base}: ${e instanceof Error ? e.message : e}\nIs the server running (npm run dev:server)?`); process.exit(1); });
