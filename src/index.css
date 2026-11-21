@@ -1,0 +1,120 @@
+@import "tailwindcss";
+
+/* Modern classic tokens. Use only these colors. */
+@theme {
+  --color-ink: #14213d;
+  --color-ivory: #faf8f3;
+  --color-slate: #5b6472;
+  --color-mist: #e6e8ec;
+  --color-brass: #b08d57;
+  --color-present: #2f7d5b;
+  --color-half: #c98a1b;
+  --color-absent: #b5473c;
+  --color-leave: #4a6fa5;
+  --color-off: #9aa1ac;
+  --font-serif: "Source Serif 4", Georgia, serif;
+  --font-sans: Inter, ui-sans-serif, system-ui, sans-serif;
+  --ease-enter: cubic-bezier(0.2, 0, 0, 1);
+  --ease-leave: cubic-bezier(0.4, 0, 1, 1);
+}
+
+html, body, #root { height: 100%; }
+body {
+  background: var(--color-ivory);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; }
+:focus-visible { outline: 2px solid var(--color-ink); outline-offset: 2px; border-radius: 6px; }
+.tnum { font-variant-numeric: tabular-nums; }
+
+/* Shared control styles */
+.card { background: #fff; border: 1px solid var(--color-mist); border-radius: 12px; box-shadow: 0 1px 0 rgba(20, 33, 61, 0.04); }
+.input {
+  width: 100%; height: 40px; padding: 0 12px; background: #fff; color: var(--color-ink);
+  border: 1px solid var(--color-slate); border-radius: 8px;
+  transition: border-color 120ms var(--ease-enter), box-shadow 120ms var(--ease-enter);
+}
+textarea.input { height: auto; padding: 8px 12px; }
+.input:focus { outline: none; border-color: var(--color-ink); box-shadow: 0 0 0 3px rgba(20, 33, 61, 0.12); }
+.input.invalid { border-color: var(--color-absent); }
+.input:disabled { background: var(--color-ivory); color: var(--color-slate); }
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 16px;
+  border-radius: 8px; font-weight: 600; white-space: nowrap; user-select: none;
+  transition: transform 120ms var(--ease-enter), background-color 120ms var(--ease-enter), border-color 120ms var(--ease-enter), opacity 120ms;
+}
+.btn:active:not(:disabled) { transform: scale(0.97); }
+.btn:disabled { opacity: 0.5; }
+.btn-sm { height: 32px; padding: 0 12px; font-size: 13px; }
+.btn-primary { background: var(--color-ink); color: #fff; }
+.btn-primary:hover:not(:disabled) { background: #1d2f55; }
+.btn-secondary { background: #fff; color: var(--color-ink); border: 1px solid var(--color-slate); }
+.btn-secondary:hover:not(:disabled) { background: var(--color-ivory); border-color: var(--color-ink); }
+.btn-ghost { color: var(--color-ink); }
+.btn-ghost:hover:not(:disabled) { background: var(--color-mist); }
+.btn-danger { background: #fff; color: var(--color-absent); border: 1px solid var(--color-absent); }
+.btn-danger:hover:not(:disabled) { background: rgba(181, 71, 60, 0.06); }
+
+/* Motion. 120 ms press, 200 ms enter, 320 ms drawers, 600 ms celebration. */
+@keyframes fade-up { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes slide-in-right { from { transform: translateX(100%); } to { transform: none; } }
+@keyframes slide-in-up { from { transform: translateY(100%); } to { transform: none; } }
+@keyframes row-in { from { opacity: 0; transform: translateY(-8px); background: rgba(176, 141, 87, 0.18); } to { opacity: 1; transform: none; background: transparent; } }
+@keyframes flash-ok { 0% { background: rgba(47, 125, 91, 0.16); } 100% { background: transparent; } }
+@keyframes flash-no { 0% { background: rgba(181, 71, 60, 0.14); } 100% { background: transparent; } }
+@keyframes toast-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+@keyframes toast-bar { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes pop { 0% { transform: scale(0.6); opacity: 0; } 60% { transform: scale(1.12); opacity: 1; } 100% { transform: scale(1); } }
+@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+@keyframes shake { 0%, 100% { transform: none; } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+@keyframes draw-check { from { stroke-dashoffset: 24; } to { stroke-dashoffset: 0; } }
+
+.anim-fade-up { animation: fade-up 200ms var(--ease-enter) both; }
+.anim-fade-in { animation: fade-in 200ms var(--ease-enter) both; }
+.anim-drawer { animation: slide-in-right 320ms var(--ease-enter) both; }
+.anim-sheet { animation: slide-in-up 320ms var(--ease-enter) both; }
+.drawer-panel { animation: slide-in-up 320ms var(--ease-enter) both; }
+@media (min-width: 768px) { .drawer-panel { animation-name: slide-in-right; } }
+.anim-row-in { animation: row-in 600ms var(--ease-enter) both; }
+.anim-flash-ok { animation: flash-ok 600ms var(--ease-enter) both; }
+.anim-flash-no { animation: flash-no 600ms var(--ease-enter) both; }
+.anim-toast { animation: toast-in 200ms var(--ease-enter) both; }
+.anim-toast-bar { transform-origin: left; animation: toast-bar 5000ms linear both; }
+.anim-spin { animation: spin 700ms linear infinite; }
+.anim-pop { animation: pop 600ms var(--ease-enter) both; }
+.anim-pulse { animation: pulse-dot 1600ms ease-in-out infinite; }
+.anim-shake { animation: shake 200ms var(--ease-enter) 2; }
+.anim-check { stroke-dasharray: 24; animation: draw-check 320ms var(--ease-enter) both; }
+.skeleton {
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--color-mist) 25%, #f1f2f4 50%, var(--color-mist) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1400ms linear infinite;
+}
+.stagger > * { animation: fade-up 200ms var(--ease-enter) both; }
+.stagger > *:nth-child(2) { animation-delay: 40ms; }
+.stagger > *:nth-child(3) { animation-delay: 80ms; }
+.stagger > *:nth-child(4) { animation-delay: 120ms; }
+.stagger > *:nth-child(5) { animation-delay: 160ms; }
+.stagger > *:nth-child(6) { animation-delay: 200ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-delay: 0ms !important; transition-duration: 0.01ms !important; }
+}
+
+/* Payslip print */
+@media print {
+  .no-print { display: none !important; }
+  #root > div, #root main { padding: 0 !important; max-width: none !important; }
+  body { background: #fff; }
+  .a4 { box-shadow: none !important; border: none !important; margin: 0 !important; width: 100% !important; min-height: 0 !important; }
+  @page { size: A4; margin: 14mm; }
+}
