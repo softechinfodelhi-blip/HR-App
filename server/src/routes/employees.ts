@@ -5,13 +5,14 @@ import { Prisma, prisma } from '../db';
 import { isProd } from '../env';
 import { audit } from '../lib/audit';
 import { fail } from '../lib/errors';
-import { localDateTime, today } from '../lib/time';
+import { localDateTime, today, ymdFromDb } from '../lib/time';
 import { pageOf, parse, skipTake, zEmail, zListQuery, zMonth, zUuid, zYmd } from '../lib/validate';
 import { actorOf, officeScope, requireAuth, requireManager, scopeWhere } from '../middleware/auth';
 import {
   createEmployee, employeeInclude, employeeRow, loadEmployee, removeInvited, setQuota, setSalary, setStatus, updateEmployee,
 } from '../services/employees';
 import { sendInvite } from '../services/invites';
+import { adjustBalance, balancesOf } from '../services/leave';
 import { assertCanManage, assertCanView, canManage, canSeeSalary } from '../services/permissions';
 
 const zName = z.string().trim().min(1, 'Enter the full name.').max(120);
@@ -76,8 +77,46 @@ export function employeeRoutes(): Router {
         return { id: s.id, employeeId: e.id, amount: Number(s.monthlyAmount), effectiveMonth: s.effectiveMonth, setBy: s.setById, setByName: by?.employee?.name ?? by?.name ?? '', setAt: localDateTime(s.setAt) };
       }) : [],
       quotas: e.leaveQuotas.filter(q => q.year >= year - 1).sort((x, y) => y.year - x.year).map(q => ({ year: q.year, cl: Number(q.clPerYear), pl: Number(q.plPerYear) })),
+      balances: await balancesOf(prisma, e.id),
       inviteToken: null, // only the hash is stored. "Send a new invite" makes a fresh link
     });
+  });
+
+  /** GET /employees/:id/ledger  Every entry behind the leave balance, newest first. */
+  r.get('/:id/ledger', requireAuth, async (req, res) => {
+    const a = actorOf(req);
+    const e = await loadEmployee(prisma, parse(zUuid, req.params.id));
+    assertCanView(a, e);
+    const q = parse(zListQuery, req.query);
+    const where = { employeeId: e.id };
+    const [total, rows] = await Promise.all([
+      prisma.leaveLedger.count({ where }),
+      prisma.leaveLedger.findMany({ where, orderBy: [{ entryDate: 'desc' }, { createdAt: 'desc' }], ...skipTake(q) }),
+    ]);
+    const by = await prisma.user.findMany({ where: { id: { in: rows.map(x => x.createdById).filter((x): x is string => !!x) } }, select: { id: true, name: true, employee: { select: { name: true } } } });
+    res.json({
+      balances: await balancesOf(prisma, e.id),
+      ...pageOf(rows.map(x => {
+        const u = by.find(b => b.id === x.createdById);
+        return { id: x.id, type: x.leaveType, days: Number(x.deltaDays), reason: x.reason, ref: x.ref, date: ymdFromDb(x.entryDate), byName: u ? u.employee?.name ?? u.name : 'System', at: localDateTime(x.createdAt) };
+      }), total, q),
+    });
+  });
+
+  /** POST /employees/:id/leave-adjustments  { type: CL | PL, days: + or -, note } */
+  r.post('/:id/leave-adjustments', requireManager, async (req, res) => {
+    const a = actorOf(req);
+    const body = parse(z.object({
+      type: z.enum(['CL', 'PL']),
+      days: z.coerce.number().min(-366).max(366).multipleOf(0.5, 'Use whole or half days.').refine(n => n !== 0, 'Enter the number of days to add or take away.'),
+      note: z.string().trim().min(1, 'Write why the balance is being changed.').max(300),
+    }), req.body);
+    await prisma.$transaction(async tx => {
+      const e = await loadEmployee(tx, parse(zUuid, req.params.id));
+      assertCanManage(a, e, 'You cannot change your own leave balance. Ask the admin.');
+      await adjustBalance(tx, a, e, body.type, body.days, body.note);
+    });
+    res.status(204).end();
   });
 
   /** POST /employees */

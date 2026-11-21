@@ -11,7 +11,9 @@ import { dayBounds, terminalStatuses } from '../services/devices';
 import { dayKind, loadCalendars } from '../services/calendar';
 import { isLocked } from '../services/locks';
 import { assertCanView, canManage } from '../services/permissions';
+import { leaveInclude, leaveRow } from '../services/leave';
 import { correctDirectly, correctionInclude, correctionRow, userNames } from '../services/requests';
+import { queueFor } from './requests';
 
 const zTimes = z.object({
   inTime: zHhmm.nullable().default(null), outTime: zHhmm.nullable().default(null),
@@ -31,6 +33,7 @@ export function attendanceRoutes(): Router {
       officeNameMap(prisma), terminalStatuses(prisma, scope),
     ]);
     const days = await computeDays(prisma, emps, date, date);
+    const waiting = (await queueFor(prisma, actorOf(req), scope.officeId)).length;
     const people = emps.map(e => ({ employeeId: e.id, name: e.name, code: e.code, officeId: e.officeId, officeName: names.get(e.officeId) ?? '', day: toView(days.get(e.id)![0], names) }));
     const expected = people.filter(p => !['off', 'holiday', 'not_joined'].includes(p.day.status));
     const calendars = await loadCalendars(prisma, offices.map(o => o.id), date, date);
@@ -44,7 +47,7 @@ export function attendanceRoutes(): Router {
         in: expected.filter(p => ['working', 'present', 'half_late', 'half_short', 'missing'].includes(p.day.status) || (p.day.status === 'leave' && !!p.day.inTime)).length,
         notIn: expected.filter(p => p.day.status === 'not_in' || p.day.status === 'absent').length,
         onLeave: expected.filter(p => p.day.status === 'leave').length,
-        waiting: 0, // Phase 4: requests waiting for this person
+        waiting, // requests waiting for this person to decide
       },
       people,
       offices: offices.map(o => ({
@@ -89,12 +92,13 @@ export function attendanceRoutes(): Router {
     assertCanView(a, e);
     const names = await officeNameMap(prisma);
     const day = (await computeDays(prisma, [e], date, date)).get(e.id)![0];
-    const [punches, requests, locked] = await Promise.all([
+    const [punches, requests, leaves, locked] = await Promise.all([
       e.terminalUserId ? prisma.rawPunch.findMany({ where: { terminalUserId: e.terminalUserId, punchTime: dayBounds(date) }, orderBy: { punchTime: 'asc' }, include: { device: { select: { name: true, officeId: true } } } }) : [],
       prisma.correctionRequest.findMany({ where: { employeeId: e.id, date: dbDate(date) }, include: correctionInclude, orderBy: { createdAt: 'desc' } }),
+      prisma.leaveRequest.findMany({ where: { employeeId: e.id, fromDate: { lte: dbDate(date) }, toDate: { gte: dbDate(date) } }, include: leaveInclude, orderBy: { createdAt: 'desc' } }),
       isLocked(prisma, e.officeId, monthOf(date)),
     ]);
-    const who = await userNames(prisma, requests.map(c => c.decidedById));
+    const who = await userNames(prisma, [...requests.map(c => c.decidedById), ...leaves.map(l => l.decidedById)]);
     const applied = day.correctionId ? requests.find(c => c.id === day.correctionId) : undefined;
     res.json({
       employee: { id: e.id, name: e.name, code: e.code, officeId: e.officeId, officeName: names.get(e.officeId) ?? '' },
@@ -103,7 +107,7 @@ export function attendanceRoutes(): Router {
       punches: punches.map(p => ({ time: hhmmOf(p.punchTime), at: localDateTime(p.punchTime), terminalName: p.device.name, officeName: names.get(p.device.officeId) ?? '', other: p.device.officeId !== e.officeId })),
       // The approved correction in force for this day: who approved it and when.
       manual: applied ? { employeeId: e.id, date, inTime: applied.claimedIn, outTime: applied.claimedOut, reason: applied.reason, byId: applied.decidedById, byName: (applied.decidedById && who.get(applied.decidedById)) || '', at: applied.decidedAt ? localDateTime(applied.decidedAt) : null } : null,
-      requests: requests.map(c => correctionRow(c, a, who)),
+      requests: [...requests.map(c => correctionRow(c, a, who)), ...leaves.map(l => leaveRow(l, a, who))],
       canCorrect: canManage(a, e) && !locked && date <= today() && date >= ymdFromDb(e.joiningDate),
       lockedNote: locked ? `${fmtMonth(monthOf(date))} is locked. Figures cannot change.` : null,
     });

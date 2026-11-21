@@ -1,4 +1,4 @@
-// Requests and their decisions. Phase 3 covers attendance corrections; Phase 4 adds leave to the same workflow.
+// Requests and their decisions: the shared row shape, and attendance corrections. Leave is in leave.ts.
 import { Prisma, type Db } from '../db';
 import { audit } from '../lib/audit';
 import { fail } from '../lib/errors';
@@ -19,6 +19,10 @@ export interface RequestRow {
   direct?: boolean;
   /** Present on corrections. */
   inTime?: string | null; outTime?: string | null;
+  /** Present on leave. */
+  leaveType?: 'CL' | 'PL' | 'UNPAID'; from?: Ymd; to?: Ymd; halfDay?: 'none' | 'first' | 'second'; half?: boolean; days?: number;
+  /** Approved leave this person may cancel. */
+  canCancelApproved?: boolean;
 }
 
 const clock = (hhmm: string) => { const [h, m] = hhmm.split(':').map(Number); return `${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`; };
@@ -74,7 +78,7 @@ export async function requestCorrection(db: Db, actor: Actor, input: TimesInput 
   await checkDate(db, e, input.date);
   if (await db.correctionRequest.count({ where: { employeeId: e.id, date: dbDate(input.date), status: 'pending' } })) fail(409, 'You already have a request waiting for this day.');
   const c = await db.correctionRequest.create({
-    data: { employeeId: e.id, date: dbDate(input.date), claimedIn: input.inTime, claimedOut: input.outTime, reason: input.reason, createdById: actor.userId },
+    data: { employeeId: e.id, date: dbDate(input.date), claimedIn: input.inTime, claimedOut: input.outTime, reason: input.reason, createdById: actor.userId, createdAt: now() },
     include: correctionInclude,
   });
   await audit(db, actor, { action: 'Correction requested', entity: 'correction_request', entityId: c.id, officeId: e.officeId, detail: `${e.name}, ${fmtDate(input.date)}. ${timesText(input.inTime, input.outTime)}`, new: { date: input.date, inTime: input.inTime, outTime: input.outTime, reason: input.reason } });
@@ -90,7 +94,7 @@ export async function correctDirectly(db: Db, actor: Actor, employeeId: string, 
   await checkDate(db, e, date);
   const t = now();
   const c = await db.correctionRequest.create({
-    data: { employeeId: e.id, date: dbDate(date), claimedIn: input.inTime, claimedOut: input.outTime, reason: input.reason, status: 'approved', createdById: actor.userId, decidedById: actor.userId, decidedAt: t },
+    data: { employeeId: e.id, date: dbDate(date), claimedIn: input.inTime, claimedOut: input.outTime, reason: input.reason, status: 'approved', createdById: actor.userId, decidedById: actor.userId, decidedAt: t, createdAt: t },
   });
   await audit(db, actor, { action: 'Attendance corrected', entity: 'correction_request', entityId: c.id, officeId: e.officeId, detail: `${e.name}, ${fmtDate(date)}. ${timesText(input.inTime, input.outTime)}. Reason: ${input.reason}`, new: { date, inTime: input.inTime, outTime: input.outTime, reason: input.reason } });
   await notify(db, e.user?.id, { type: 'day_corrected', text: `Your attendance for ${fmtDate(date)} was corrected by ${actor.name}`, link: '/me/attendance' });

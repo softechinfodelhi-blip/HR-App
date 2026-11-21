@@ -60,3 +60,14 @@ const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 export function fmtDate(d: Ymd): string { const [, m, dd] = d.split('-').map(Number); return `${DOW[dow(d)]} ${dd} ${MON[m - 1]}`; }
 /** 'November 2026' */
 export function fmtMonth(m: Month): string { const [y, mm] = m.split('-').map(Number); return `${MON_LONG[mm - 1]} ${y}`; }
+/** '23 Nov' */
+export function fmtDay(d: Ymd): string { const [, m, dd] = d.split('-').map(Number); return `${dd} ${MON[m - 1]}`; }
+/** 'Mon 23 Nov', '23 to 25 Nov' or '30 Nov to 2 Dec' */
+export function fmtRange(a: Ymd, b: Ymd): string {
+  if (a === b) return fmtDate(a);
+  const ma = Number(a.slice(5, 7)), mb = Number(b.slice(5, 7));
+  return ma === mb ? `${Number(a.slice(8))} to ${Number(b.slice(8))} ${MON[mb - 1]}` : `${fmtDay(a)} to ${fmtDay(b)}`;
+}
+/** '1 day', '0.5 day', '2.5 days' */
+export function fmtDays(n: number): string { return `${Number.isInteger(n) ? n : n.toFixed(1)} ${n === 1 || n === 0.5 ? 'day' : 'days'}`; }
+export const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;

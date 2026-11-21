@@ -15,8 +15,9 @@ import { deviceRoutes, punchRoutes } from './routes/devices';
 import { employeeRoutes } from './routes/employees';
 import { holidayRoutes } from './routes/holidays';
 import { liveRoutes } from './routes/live';
+import { notificationRoutes } from './routes/notifications';
 import { officeRoutes } from './routes/offices';
-import { correctionRoutes, myRequestRoutes, requestRoutes } from './routes/requests';
+import { correctionRoutes, leaveRoutes, myRequestRoutes, requestRoutes } from './routes/requests';
 import { settingsRoutes } from './routes/settings';
 
 export interface AppOptions {
@@ -79,6 +80,8 @@ export function createApp(opts: AppOptions = {}): Express {
   api.use('/live', liveRoutes());
   api.use('/requests', requestRoutes());
   api.use('/corrections', correctionRoutes());
+  api.use('/leave', leaveRoutes());
+  api.use('/notifications', notificationRoutes());
   api.use('/holidays', holidayRoutes());
   api.use('/me', meRoutes());
   api.use('/me', myRequestRoutes());
