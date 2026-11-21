@@ -18,7 +18,8 @@
     "db:deploy": "prisma migrate deploy --schema server/prisma/schema.prisma",
     "db:generate": "prisma generate --schema server/prisma/schema.prisma",
     "seed": "tsx server/scripts/seed.ts",
-    "seed:demo": "tsx server/scripts/seed.ts --demo"
+    "seed:demo": "tsx server/scripts/seed.ts --demo",
+    "replay": "tsx server/scripts/replay-attlog.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",

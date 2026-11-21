@@ -7,6 +7,7 @@ import { fail } from '../lib/errors';
 import { notify } from '../lib/notify';
 import { parse, zHhmm, zUuid } from '../lib/validate';
 import { actorOf, requireAdmin, requireAuth } from '../middleware/auth';
+import { terminalStatuses } from '../services/devices';
 
 const zOffice = z.object({
   name: z.string().trim().min(1, 'Give the office a name.').max(100),
@@ -28,11 +29,12 @@ export function officeRoutes(): Router {
       orderBy: { number: 'asc' },
       include: { head: { select: { name: true } }, _count: { select: { employees: { where: { status: { not: 'inactive' } } } } } },
     });
+    const terminals = await terminalStatuses(prisma, a.role === 'admin' ? {} : { officeId: a.officeId! });
     res.json(offices.map(o => ({
       id: o.id, number: o.number, name: o.name, address: o.address, startTime: o.startTime,
       fullDayHours: Number(o.fullDayHours), halfDayHours: Number(o.minHalfDayHours),
       headId: o.headEmployeeId, headName: o.head?.name ?? null, headcount: o._count.employees,
-      terminal: null, // filled in Phase 2
+      terminal: terminals.find(t => t.officeId === o.id) ?? null,
     })));
   });
 

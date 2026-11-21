@@ -1,0 +1,16 @@
+# Sample ATTLOG upload, in the format the eSSL terminal sends.
+# Tab separated: user id, time (terminal clock, Asia/Kolkata), status, verify type, then more fields.
+# Users 103 to 117 are demo employees of Office 1. 999 is enrolled on the terminal but is nobody in the app.
+# 201 belongs to Office 2 and punches here, at Office 1's terminal.
+103	2026-01-01 08:52:11	0	1	0	0	0
+104	2026-01-01 08:55:40	0	1	0	0	0
+105	2026-01-01 08:58:03	0	1	0	0	0
+106	2026-01-01 09:00:59	0	1	0	0	0
+108	2026-01-01 09:01:00	0	1	0	0	0
+117	2026-01-01 09:12:27	0	15	0	0	0
+117	2026-01-01 09:12:29	0	15	0	0	0
+999	2026-01-01 09:15:02	0	1	0	0	0
+201	2026-01-01 10:30:45	0	1	0	0	0
+103	2026-01-01 18:04:18	1	1	0	0	0
+104	2026-01-01 18:10:02	1	1	0	0	0
+105	2026-01-01 13:20:00	1	1	0	0	0

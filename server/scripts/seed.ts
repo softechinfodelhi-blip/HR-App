@@ -115,10 +115,19 @@ async function seedDemo() {
   console.log(`[seed] Demo data added: 3 offices, 42 people. Everyone signs in as firstname.lastname@sbm.example with "${DEMO_PASSWORD}".`);
 }
 
+/** One terminal per office, so the replay script has something to talk to. */
+async function seedDemoDevices() {
+  if (isProd || (await prisma.device.count())) return;
+  for (const o of await prisma.office.findMany({ orderBy: { number: 'asc' } })) {
+    await prisma.device.create({ data: { officeId: o.id, name: `${o.name} door`, serialNumber: `DEMO${String(o.number).padStart(4, '0')}` } });
+  }
+  console.log('[seed] Demo terminals added: serials DEMO0001, DEMO0002, DEMO0003.');
+}
+
 async function main() {
   await seedSettings();
   await seedAdmin();
-  if (process.argv.includes('--demo')) await seedDemo();
+  if (process.argv.includes('--demo')) { await seedDemo(); await seedDemoDevices(); }
 }
 
 main().then(() => prisma.$disconnect()).catch(async e => { console.error(e instanceof Error ? e.message : e); await prisma.$disconnect(); process.exit(1); });

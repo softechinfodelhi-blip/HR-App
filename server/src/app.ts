@@ -10,7 +10,9 @@ import { isProd } from './env';
 import { HttpError } from './lib/errors';
 import { loadSession, sameOrigin } from './middleware/auth';
 import { authRoutes } from './routes/auth';
+import { deviceRoutes, punchRoutes } from './routes/devices';
 import { employeeRoutes } from './routes/employees';
+import { attendanceRoutes, liveRoutes } from './routes/live';
 import { officeRoutes } from './routes/offices';
 import { settingsRoutes } from './routes/settings';
 
@@ -68,6 +70,10 @@ export function createApp(opts: AppOptions = {}): Express {
   api.use('/offices', officeRoutes());
   api.use('/employees', employeeRoutes());
   api.use('/settings', settingsRoutes());
+  api.use('/devices', deviceRoutes());
+  api.use('/punches', punchRoutes());
+  api.use('/attendance', attendanceRoutes());
+  api.use('/live', liveRoutes());
 
   api.use((_req, res) => { res.status(404).json({ message: 'This address does not exist.' }); });
   api.use(errorHandler);
