@@ -219,7 +219,7 @@ describe('app side: terminals, unmatched punches, live board', () => {
     const board = (await (await signIn(w.head1.email)).get('/api/attendance/today')).body;
     expect(board).toMatchObject({ date: '2026-11-23', time: '09:30', working: true, counts: { total: 3, in: 2, notIn: 1 } });
     const day = (name: string) => board.people.find((p: { name: string }) => p.name === name).day;
-    expect(day('Priya Nair')).toMatchObject({ status: 'working', inTime: '09:00', outTime: '09:25', late: false, workedMin: 24, otherOffice: 'Office 2', label: 'Last punch 9:25 AM' });
+    expect(day('Priya Nair')).toMatchObject({ status: 'working', inTime: '09:00', outTime: '09:25', late: false, workedMin: 25, otherOffice: 'Office 2', label: 'Last punch 9:25 AM' });
     expect(day('Vikram Singh')).toMatchObject({ status: 'working', inTime: '09:01', outTime: null, late: true, label: 'In since 9:01 AM' });
     expect(day('Aarav Mehta')).toMatchObject({ status: 'not_in', late: true });
     expect(board.offices).toMatchObject([{ name: 'Office 1', headcount: 3, terminal: { serial: 'SN001', online: true, punchesToday: 2 } }]);
@@ -240,7 +240,7 @@ describe('live stream (Server-Sent Events)', () => {
     const cookie = String(login.headers['set-cookie']).split(';')[0];
     const ac = new AbortController(); controllers.push(ac);
     const res = await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/api/live${query}`, { headers: { Cookie: cookie }, signal: ac.signal });
-    const events: { event: string; data: Record<string, unknown> }[] = [];
+    const events: { event: string; data: Record<string, unknown> }[] = []; const days: Record<string, unknown>[] = [];
     if (res.ok && res.body) {
       const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = '';
       (async () => {
@@ -252,13 +252,13 @@ describe('live stream (Server-Sent Events)', () => {
             while ((i = buf.indexOf('\n\n')) >= 0) {
               const block = buf.slice(0, i); buf = buf.slice(i + 2);
               const event = /^event: (.+)$/m.exec(block)?.[1]; const data = /^data: (.+)$/m.exec(block)?.[1];
-              if (event) events.push({ event, data: data ? JSON.parse(data) : {} });
+              if (event === "day") days.push(JSON.parse(data ?? "{}")); else if (event) events.push({ event, data: data ? JSON.parse(data) : {} });
             }
           }
         } catch { /* aborted at the end of the test */ }
       })();
     }
-    return { status: res.status, type: res.headers.get('content-type'), events };
+    return { status: res.status, type: res.headers.get("content-type"), events, days };
   }
   const until = async (ok: () => boolean) => { for (let i = 0; i < 100 && !ok(); i++) await new Promise(r => setTimeout(r, 20)); };
 
@@ -286,6 +286,9 @@ describe('live stream (Server-Sent Events)', () => {
     await post('SN001', line(w.priya.terminalUserId!, '2026-11-23 09:00:10'));
     await new Promise(r => setTimeout(r, 100));
     expect(h1.events).toHaveLength(3);
+    // Each stored punch also recomputed the day, which is announced to the employee's own office only.
+    expect(h1.days).toEqual([{ employeeId: w.priya.id, date: "2026-11-23" }, { employeeId: w.aarav.id, date: "2026-11-23" }]);
+    expect(h2.days).toEqual([]);
   });
 
   it('refuses an employee, a signed-out caller and a head asking for another office', async () => {

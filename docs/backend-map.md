@@ -31,7 +31,7 @@ Conventions
 | Terminals `/attendance/terminals` | `GET /devices`, `GET /devices/punches?office=`, **new** `GET /devices/unregistered`, `POST /devices` (register a serial to an office), `PATCH/DELETE /devices/:id`, `GET /punches/unmatched?office=`. "Demo: send one punch" is replaced by `server/scripts/replay-attlog.ts` |
 | Leave requests `/leave` | `GET /requests?kind=leave&status=&office=`, decision / undo / reverse as above, **new** `POST /requests/:id/cancel-approved` (head or admin) |
 | Leave calendar `/leave/calendar` | `GET /leave/calendar?office=&month=` |
-| Holidays `/leave/holidays` | `GET /holidays?office=&year=`, `POST /holidays`, `DELETE /holidays/:id`. "Working day on an off" goes to `POST /calendar-overrides` (kind `working`); **new** option "Office closed" (kind `off`) |
+| Holidays `/leave/holidays` | `GET /holidays?office=&year=`, `POST /holidays`, `DELETE /holidays/:id`. One endpoint for both tables: `kind` = `holiday` (holidays), `working` or `off` (calendar_overrides). **New** option "Office closed" (kind `off`) |
 | Payroll `/payroll` | `GET /payroll?month=` (one line per office), `GET /payroll/:officeId/:month` (rows + checklist), `POST .../review`, `POST .../lock`, `POST .../unlock` (admin), `GET .../summary` (lock summary) |
 | Payslips `/payroll/payslips`, `/payroll/payslips/:emp/:month` | `GET /payslips?office=&month=`, `GET /payslips/:employeeId/:month`, `GET /payslips/:employeeId/:month/pdf` |
 | Organisation `/settings` (admin) | `GET /settings`, `PATCH /settings` (company name, default quotas, PL carry cap, escalation days) |

@@ -3,6 +3,7 @@
 import { prisma } from '../db';
 import { publish } from '../lib/live';
 import { istToUtc, now, ymdOf, hhmmOf } from '../lib/time';
+import { announceDay, recomputeDay } from './attendance';
 
 /** Reply to GET /iclock/cdata. There is deliberately no TimeZone line. */
 export function handshakeText(serial: string, lastStamp: string | null): string {
@@ -84,12 +85,22 @@ export async function ingestAttlog(device: { id: string; officeId: string; name:
   return { lines, inserted: inserted.length };
 }
 
-/** After new punches are stored: tell the live board. Phase 3 recomputes the attendance day here first. */
+/** After new punches are stored: recompute each affected attendance day, then tell the live board. */
 async function afterPunches(device: { id: string; officeId: string; name: string }, rows: { terminalUserId: string; punchTime: Date }[]) {
   const employees = await prisma.employee.findMany({
     where: { terminalUserId: { in: [...new Set(rows.map(r => r.terminalUserId))] } },
     select: { id: true, name: true, officeId: true, terminalUserId: true },
   });
+  // One recompute per employee and date, however many punches arrived for it.
+  const affected = new Map<string, { employeeId: string; date: string }>();
+  for (const r of rows) {
+    const e = employees.find(x => x.terminalUserId === r.terminalUserId);
+    if (e) affected.set(`${e.id}|${ymdOf(r.punchTime)}`, { employeeId: e.id, date: ymdOf(r.punchTime) });
+  }
+  for (const a of affected.values()) {
+    try { announceDay(await recomputeDay(prisma, a.employeeId, a.date)); }
+    catch (err) { console.error('[adms] recompute failed:', err instanceof Error ? err.message : err); } // the punch is stored; the day is computed again on read
+  }
   for (const r of rows) {
     const e = employees.find(x => x.terminalUserId === r.terminalUserId);
     publish({

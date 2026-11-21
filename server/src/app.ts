@@ -9,11 +9,14 @@ import { Prisma, prisma } from './db';
 import { isProd } from './env';
 import { HttpError } from './lib/errors';
 import { loadSession, sameOrigin } from './middleware/auth';
+import { attendanceRoutes, meRoutes } from './routes/attendance';
 import { authRoutes } from './routes/auth';
 import { deviceRoutes, punchRoutes } from './routes/devices';
 import { employeeRoutes } from './routes/employees';
-import { attendanceRoutes, liveRoutes } from './routes/live';
+import { holidayRoutes } from './routes/holidays';
+import { liveRoutes } from './routes/live';
 import { officeRoutes } from './routes/offices';
+import { correctionRoutes, myRequestRoutes, requestRoutes } from './routes/requests';
 import { settingsRoutes } from './routes/settings';
 
 export interface AppOptions {
@@ -74,6 +77,11 @@ export function createApp(opts: AppOptions = {}): Express {
   api.use('/punches', punchRoutes());
   api.use('/attendance', attendanceRoutes());
   api.use('/live', liveRoutes());
+  api.use('/requests', requestRoutes());
+  api.use('/corrections', correctionRoutes());
+  api.use('/holidays', holidayRoutes());
+  api.use('/me', meRoutes());
+  api.use('/me', myRequestRoutes());
 
   api.use((_req, res) => { res.status(404).json({ message: 'This address does not exist.' }); });
   api.use(errorHandler);

@@ -1,20 +1,11 @@
-// The live board: today's figures, and a Server-Sent Events stream that says when to refresh them.
+// The Server-Sent Events stream that tells the live board when to refresh.
 import { Router } from 'express';
-import { prisma } from '../db';
 import { subscribe } from '../lib/live';
 import { officeScope, requireManager, scopeWhere } from '../middleware/auth';
-import { todayBoard } from '../services/devices';
 
 const HEARTBEAT_MS = 25_000;
 /** The stream is closed after this long. The browser reconnects by itself and the session is checked again. */
 const MAX_STREAM_MS = 60 * 60 * 1000;
-
-export function attendanceRoutes(): Router {
-  const r = Router();
-  /** GET /attendance/today?office= */
-  r.get('/today', requireManager, officeScope, async (req, res) => { res.json(await todayBoard(prisma, scopeWhere(req))); });
-  return r;
-}
 
 export function liveRoutes(): Router {
   const r = Router();
