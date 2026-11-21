@@ -131,6 +131,12 @@ export async function updateEmployee(db: Db, actor: Actor, e: EmployeeFull, patc
     const other = await db.employee.findUnique({ where: { terminalUserId: d.new.terminalUserId } });
     if (other && other.id !== e.id) fail(409, `Terminal user ID ${d.new.terminalUserId} belongs to ${other.name}.`);
   }
+  for (const key of ['joinDate', 'lastWorkingDate'] as const) {
+    if (!(key in d.new)) continue;
+    const dates = [before[key], d.new[key]].filter((x): x is string => !!x).sort();
+    const lockedRun = await db.payrollRun.findFirst({ where: { officeId: e.officeId, status: 'locked', month: { gte: dates[0].slice(0, 7) } }, orderBy: { month: 'asc' } });
+    if (lockedRun) fail(409, `${fmtMonth(lockedRun.month)} is locked, so this date cannot change. Ask the admin to unlock it first.`);
+  }
   const join = patch.joinDate ?? before.joinDate;
   const last = patch.lastWorkingDate === undefined ? before.lastWorkingDate : patch.lastWorkingDate;
   if (last && last < join) fail(422, 'The last working date is before the joining date.');

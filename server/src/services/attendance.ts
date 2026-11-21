@@ -119,21 +119,35 @@ function fromRow(r: Row): DayResult {
   };
 }
 
+function rowData(d: DayResult, finalized: boolean) {
+  return {
+      checkIn: d.inTime ? istToUtc(d.date, d.inTime) : null, checkOut: d.outTime ? istToUtc(d.date, d.outTime) : null,
+      hours: Math.round((d.workedMin / 60) * 100) / 100, status: d.engine!, paidFraction: d.paidFraction!, isManual: d.manual, finalized, computedAt: now(),
+      flags: {
+        status: d.status, label: d.label, workedMin: d.workedMin, late: d.late, correctionId: d.correctionId, otherOfficeId: d.otherOfficeId,
+        otherOffice: !!d.otherOfficeId, leaveType: d.leaveType ?? null, halfLeave: d.halfLeave ?? false, holidayName: d.holidayName ?? null,
+      },
+  };
+}
+
 /** Writes results to attendance_days. Dates with nothing to store (future, outside employment) are removed. */
 export async function storeDays(db: Db, employeeId: string, days: DayResult[], finalized: boolean): Promise<void> {
   for (const d of days) {
     const key = { employeeId_date: { employeeId, date: dbDate(d.date) } };
     if (d.engine === null || d.paidFraction === null) { await db.attendanceDay.deleteMany({ where: { employeeId, date: dbDate(d.date) } }); continue; }
-    const data = {
-      checkIn: d.inTime ? istToUtc(d.date, d.inTime) : null, checkOut: d.outTime ? istToUtc(d.date, d.outTime) : null,
-      hours: Math.round((d.workedMin / 60) * 100) / 100, status: d.engine, paidFraction: d.paidFraction, isManual: d.manual, finalized, computedAt: now(),
-      flags: {
-        status: d.status, label: d.label, workedMin: d.workedMin, late: d.late, correctionId: d.correctionId, otherOfficeId: d.otherOfficeId,
-        otherOffice: !!d.otherOfficeId, leaveType: d.leaveType ?? null, halfLeave: d.halfLeave ?? false, holidayName: d.holidayName ?? null,
-      },
-    };
+    const data = rowData(d, finalized);
     await db.attendanceDay.upsert({ where: key, create: { employeeId, date: dbDate(d.date), ...data }, update: data });
   }
+}
+
+/** Replaces every stored day of a span for several people at once. Used when a month is locked. */
+export async function freezeDays(db: Db, days: Map<string, DayResult[]>, from: Ymd, to: Ymd): Promise<void> {
+  const ids = [...days.keys()];
+  await db.attendanceDay.deleteMany({ where: { employeeId: { in: ids }, date: { gte: dbDate(from), lte: dbDate(to) } } });
+  const data = ids.flatMap(employeeId => days.get(employeeId)!
+    .filter(d => d.engine !== null && d.paidFraction !== null)
+    .map(d => ({ employeeId, date: dbDate(d.date), ...rowData(d, true), status: d.engine!, paidFraction: d.paidFraction! })));
+  if (data.length) await db.attendanceDay.createMany({ data });
 }
 
 /**

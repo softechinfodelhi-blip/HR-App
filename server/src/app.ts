@@ -17,6 +17,7 @@ import { holidayRoutes } from './routes/holidays';
 import { liveRoutes } from './routes/live';
 import { notificationRoutes } from './routes/notifications';
 import { officeRoutes } from './routes/offices';
+import { myPayslipRoutes, payrollRoutes, payslipRoutes } from './routes/payroll';
 import { correctionRoutes, leaveRoutes, myRequestRoutes, requestRoutes } from './routes/requests';
 import { settingsRoutes } from './routes/settings';
 
@@ -85,6 +86,9 @@ export function createApp(opts: AppOptions = {}): Express {
   api.use('/holidays', holidayRoutes());
   api.use('/me', meRoutes());
   api.use('/me', myRequestRoutes());
+  api.use('/me', myPayslipRoutes());
+  api.use('/payroll', payrollRoutes());
+  api.use('/payslips', payslipRoutes());
 
   api.use((_req, res) => { res.status(404).json({ message: 'This address does not exist.' }); });
   api.use(errorHandler);
