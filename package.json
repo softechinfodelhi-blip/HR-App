@@ -5,27 +5,63 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:server": "tsx watch server/src/index.ts",
     "build": "tsc --noEmit && vite build",
+    "start": "tsx server/src/index.ts",
     "typecheck": "tsc --noEmit",
+    "typecheck:server": "tsc -p server",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:server": "vitest run --config server/vitest.config.ts",
+    "db:start": "tsx server/scripts/dev-db.ts",
+    "db:migrate": "prisma migrate dev --schema server/prisma/schema.prisma",
+    "db:deploy": "prisma migrate deploy --schema server/prisma/schema.prisma",
+    "db:generate": "prisma generate --schema server/prisma/schema.prisma",
+    "seed": "tsx server/scripts/seed.ts",
+    "seed:demo": "tsx server/scripts/seed.ts --demo"
   },
   "dependencies": {
+    "@prisma/client": "^6.19.3",
+    "argon2": "^0.45.2",
+    "express": "^5.3.0",
+    "express-rate-limit": "^8.7.5",
+    "helmet": "^8.3.0",
+    "node-cron": "^4.6.0",
+    "nodemailer": "^10.6.1",
+    "pdfkit": "^0.21.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "react-router-dom": "^7.0.0"
+    "react-router-dom": "^7.0.0",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.0.0",
     "@testing-library/dom": "^10.4.2",
     "@testing-library/react": "^16.3.3",
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.6.6",
+    "@types/nodemailer": "^8.0.2",
+    "@types/pdfkit": "^0.17.7",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@types/supertest": "^7.2.1",
     "@vitejs/plugin-react": "^6.0.0",
+    "embedded-postgres": "^18.7.0-beta.19",
     "jsdom": "^31.0.1",
+    "prisma": "^6.19.3",
+    "supertest": "^7.3.2",
     "tailwindcss": "^4.0.0",
+    "tsx": "^4.23.15",
     "typescript": "^5.6.0",
     "vite": "^8.0.0",
     "vitest": "^5.1.1"
+  },
+  "allowScripts": {
+    "@embedded-postgres/windows-x64@18.7.0-beta.19": true,
+    "@prisma/client@6.19.3": true,
+    "@prisma/engines@6.19.3": true,
+    "argon2@0.45.2": true,
+    "esbuild@0.28.2": true,
+    "prisma@6.19.3": true
   }
 }

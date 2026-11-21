@@ -1,0 +1,451 @@
+// SBM HR data model. Tables and columns are snake_case in Postgres.
+// Timestamps are timestamptz (UTC). Dates are calendar dates in Asia/Kolkata. Months are 'YYYY-MM'.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum Role {
+  admin
+  office_head
+  employee
+}
+
+enum EmployeeStatus {
+  invited
+  active
+  inactive
+}
+
+enum DayStatus {
+  PRESENT
+  HALF_DAY_LATE
+  HALF_DAY_SHORT
+  MISSING_PUNCH
+  ABSENT
+  ON_LEAVE
+  OFF
+  HOLIDAY
+}
+
+enum RequestStatus {
+  pending
+  approved
+  rejected
+  cancelled
+}
+
+enum LeaveType {
+  CL
+  PL
+  UNPAID
+}
+
+enum HalfDay {
+  none
+  first
+  second
+}
+
+enum OverrideKind {
+  working
+  off
+}
+
+enum PayrollStatus {
+  open
+  locked
+}
+
+model Office {
+  id              String   @id @default(uuid()) @db.Uuid
+  number          Int      @unique @default(autoincrement()) // 1, 2, 3: used in employee codes
+  name            String
+  address         String   @default("")
+  startTime       String   @default("09:00") @map("start_time") @db.VarChar(5)
+  fullDayHours    Decimal  @default(9) @map("full_day_hours") @db.Decimal(4, 2)
+  minHalfDayHours Decimal  @default(4.5) @map("min_half_day_hours") @db.Decimal(4, 2)
+  headEmployeeId  String?  @unique @map("head_employee_id") @db.Uuid
+  nextEmployeeSeq Int      @default(1) @map("next_employee_seq")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  head              Employee?          @relation("OfficeHead", fields: [headEmployeeId], references: [id])
+  employees         Employee[]         @relation("OfficeEmployees")
+  devices           Device[]
+  holidays          Holiday[]
+  calendarOverrides CalendarOverride[]
+  payrollRuns       PayrollRun[]
+
+  @@map("offices")
+}
+
+model Device {
+  id              String    @id @default(uuid()) @db.Uuid
+  serialNumber    String    @unique @map("serial_number")
+  name            String    @default("")
+  officeId        String    @map("office_id") @db.Uuid
+  lastSeenAt      DateTime? @map("last_seen_at") @db.Timestamptz(3)
+  lastAttlogStamp String?   @map("last_attlog_stamp")
+  silentAlertAt   DateTime? @map("silent_alert_at") @db.Timestamptz(3) // last "terminal is silent" alert
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  office  Office     @relation(fields: [officeId], references: [id])
+  punches RawPunch[]
+
+  @@index([officeId])
+  @@map("devices")
+}
+
+/// Serial numbers that called /iclock but are not registered. Nothing else is stored for them.
+model UnregisteredDevice {
+  serialNumber String   @id @map("serial_number")
+  firstSeenAt  DateTime @default(now()) @map("first_seen_at") @db.Timestamptz(3)
+  lastSeenAt   DateTime @default(now()) @map("last_seen_at") @db.Timestamptz(3)
+  requestCount Int      @default(1) @map("request_count")
+  lastIp       String?  @map("last_ip")
+
+  @@map("unregistered_devices")
+}
+
+model Employee {
+  id              String         @id @default(uuid()) @db.Uuid
+  code            String         @unique // EMP-0117
+  name            String
+  phone           String         @default("")
+  designation     String         @default("")
+  officeId        String         @map("office_id") @db.Uuid
+  joiningDate     DateTime       @map("joining_date") @db.Date
+  lastWorkingDate DateTime?      @map("last_working_date") @db.Date
+  terminalUserId  String?        @unique @map("terminal_user_id") // the user id enrolled on the terminals
+  status          EmployeeStatus @default(invited)
+  bestStreak      Int            @default(0) @map("best_streak")
+  createdAt       DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  office             Office              @relation("OfficeEmployees", fields: [officeId], references: [id])
+  headOf             Office?             @relation("OfficeHead")
+  user               User?
+  salaryHistory      SalaryHistory[]
+  attendanceDays     AttendanceDay[]
+  correctionRequests CorrectionRequest[]
+  leaveQuotas        LeaveQuota[]
+  leaveLedger        LeaveLedger[]
+  leaveRequests      LeaveRequest[]
+  payrollItems       PayrollItem[]
+  badges             Badge[]
+
+  @@index([officeId, status])
+  @@map("employees")
+}
+
+model User {
+  id               String    @id @default(uuid()) @db.Uuid
+  email            String    @unique // always stored in lower case
+  name             String    @default("") // used for the admin, who has no employee record
+  passwordHash     String?   @map("password_hash")
+  role             Role
+  employeeId       String?   @unique @map("employee_id") @db.Uuid
+  inviteTokenHash  String?   @unique @map("invite_token_hash")
+  inviteExpiresAt  DateTime? @map("invite_expires_at") @db.Timestamptz(3)
+  resetTokenHash   String?   @unique @map("reset_token_hash")
+  resetExpiresAt   DateTime? @map("reset_expires_at") @db.Timestamptz(3)
+  lastLoginAt      DateTime? @map("last_login_at") @db.Timestamptz(3)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  employee      Employee?      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  sessions      Session[]
+  notifications Notification[]
+
+  @@map("users")
+}
+
+model Session {
+  id         String   @id @default(uuid()) @db.Uuid
+  tokenHash  String   @unique @map("token_hash")
+  userId     String   @map("user_id") @db.Uuid
+  expiresAt  DateTime @map("expires_at") @db.Timestamptz(3)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  lastUsedAt DateTime @default(now()) @map("last_used_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+model SalaryHistory {
+  id             String   @id @default(uuid()) @db.Uuid
+  employeeId     String   @map("employee_id") @db.Uuid
+  monthlyAmount  Decimal  @map("monthly_amount") @db.Decimal(12, 2)
+  effectiveMonth String   @map("effective_month") @db.VarChar(7)
+  setById        String?  @map("set_by_id") @db.Uuid // users.id
+  setAt          DateTime @default(now()) @map("set_at") @db.Timestamptz(3)
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, effectiveMonth])
+  @@map("salary_history")
+}
+
+/// Exactly what the terminal sent. Insert only: never updated, never deleted.
+model RawPunch {
+  id             BigInt   @id @default(autoincrement())
+  deviceId       String   @map("device_id") @db.Uuid
+  terminalUserId String   @map("terminal_user_id")
+  punchTime      DateTime @map("punch_time") @db.Timestamptz(3)
+  receivedAt     DateTime @default(now()) @map("received_at") @db.Timestamptz(3)
+  rawLine        String   @map("raw_line")
+
+  device Device @relation(fields: [deviceId], references: [id])
+
+  @@unique([deviceId, terminalUserId, punchTime])
+  @@index([terminalUserId, punchTime])
+  @@index([receivedAt])
+  @@map("raw_punches")
+}
+
+/// One row per employee per date, produced by the attendance engine.
+model AttendanceDay {
+  employeeId   String    @map("employee_id") @db.Uuid
+  date         DateTime  @db.Date
+  checkIn      DateTime? @map("check_in") @db.Timestamptz(3)
+  checkOut     DateTime? @map("check_out") @db.Timestamptz(3)
+  hours        Decimal   @default(0) @db.Decimal(5, 2)
+  status       DayStatus
+  paidFraction Decimal   @map("paid_fraction") @db.Decimal(2, 1)
+  isManual     Boolean   @default(false) @map("is_manual")
+  flags        Json      @default("{}") // late, otherOfficeId, leaveType, halfLeave, holidayName, correctionId
+  finalized    Boolean   @default(false) // set by the 23:55 job
+  computedAt   DateTime  @default(now()) @map("computed_at") @db.Timestamptz(3)
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@id([employeeId, date])
+  @@index([date])
+  @@map("attendance_days")
+}
+
+model CorrectionRequest {
+  id          String        @id @default(uuid()) @db.Uuid
+  employeeId  String        @map("employee_id") @db.Uuid
+  date        DateTime      @db.Date
+  claimedIn   String?       @map("claimed_in") @db.VarChar(5) // HH:mm, office time
+  claimedOut  String?       @map("claimed_out") @db.VarChar(5)
+  reason      String
+  status      RequestStatus @default(pending)
+  createdById String?       @map("created_by_id") @db.Uuid // users.id. A head's direct fix is created and decided by the head
+  decidedById String?       @map("decided_by_id") @db.Uuid
+  decidedAt   DateTime?     @map("decided_at") @db.Timestamptz(3)
+  comment     String?
+  escalatedAt DateTime?     @map("escalated_at") @db.Timestamptz(3)
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId, date])
+  @@index([status])
+  @@map("correction_requests")
+}
+
+model LeaveQuota {
+  employeeId String  @map("employee_id") @db.Uuid
+  year       Int
+  clPerYear  Decimal @map("cl_per_year") @db.Decimal(4, 1)
+  plPerYear  Decimal @map("pl_per_year") @db.Decimal(4, 1)
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@id([employeeId, year])
+  @@map("leave_quotas")
+}
+
+/// Leave balance = sum of delta_days. There is no balance column anywhere.
+model LeaveLedger {
+  id          String    @id @default(uuid()) @db.Uuid
+  employeeId  String    @map("employee_id") @db.Uuid
+  leaveType   LeaveType @map("leave_type") // CL or PL only
+  deltaDays   Decimal   @map("delta_days") @db.Decimal(6, 2)
+  reason      String // credit, leave, reversal, carry_cap, lapse, adjustment, opening
+  ref         String? // leave request id, 'YYYY-MM' of a credit, or a note for an adjustment
+  entryDate   DateTime  @map("entry_date") @db.Date
+  uniqueKey   String?   @unique @map("unique_key") // makes scheduled entries safe to rerun, e.g. credit:<emp>:CL:2026-11
+  createdById String?   @map("created_by_id") @db.Uuid // users.id, null for jobs
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId, leaveType])
+  @@map("leave_ledger")
+}
+
+model LeaveRequest {
+  id          String        @id @default(uuid()) @db.Uuid
+  employeeId  String        @map("employee_id") @db.Uuid
+  type        LeaveType
+  fromDate    DateTime      @map("from_date") @db.Date
+  toDate      DateTime      @map("to_date") @db.Date
+  halfDay     HalfDay       @default(none) @map("half_day")
+  days        Decimal       @db.Decimal(4, 1)
+  reason      String
+  status      RequestStatus @default(pending)
+  decidedById String?       @map("decided_by_id") @db.Uuid
+  decidedAt   DateTime?     @map("decided_at") @db.Timestamptz(3)
+  comment     String?
+  escalatedAt DateTime?     @map("escalated_at") @db.Timestamptz(3)
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId, fromDate])
+  @@index([status])
+  @@map("leave_requests")
+}
+
+model Holiday {
+  id       String   @id @default(uuid()) @db.Uuid
+  officeId String   @map("office_id") @db.Uuid
+  date     DateTime @db.Date
+  name     String
+
+  office Office @relation(fields: [officeId], references: [id], onDelete: Cascade)
+
+  @@unique([officeId, date])
+  @@map("holidays")
+}
+
+/// Wins over weekly offs and holidays.
+model CalendarOverride {
+  id       String       @id @default(uuid()) @db.Uuid
+  officeId String       @map("office_id") @db.Uuid
+  date     DateTime     @db.Date
+  kind     OverrideKind
+  name     String       @default("")
+
+  office Office @relation(fields: [officeId], references: [id], onDelete: Cascade)
+
+  @@unique([officeId, date])
+  @@map("calendar_overrides")
+}
+
+model PayrollRun {
+  id           String        @id @default(uuid()) @db.Uuid
+  officeId     String        @map("office_id") @db.Uuid
+  month        String        @db.VarChar(7)
+  status       PayrollStatus @default(open)
+  reviewedById String?       @map("reviewed_by_id") @db.Uuid
+  reviewedAt   DateTime?     @map("reviewed_at") @db.Timestamptz(3)
+  lockedById   String?       @map("locked_by_id") @db.Uuid
+  lockedAt     DateTime?     @map("locked_at") @db.Timestamptz(3)
+
+  office Office        @relation(fields: [officeId], references: [id])
+  items  PayrollItem[]
+
+  @@unique([officeId, month])
+  @@map("payroll_runs")
+}
+
+/// Snapshot taken at lock. Never changed afterwards; an unlock deletes the rows.
+model PayrollItem {
+  id            String  @id @default(uuid()) @db.Uuid
+  runId         String  @map("run_id") @db.Uuid
+  employeeId    String  @map("employee_id") @db.Uuid
+  employeeName  String  @map("employee_name")
+  employeeCode  String  @map("employee_code")
+  designation   String  @default("")
+  monthlySalary Decimal @map("monthly_salary") @db.Decimal(12, 2)
+  daysInMonth   Int     @map("days_in_month")
+  present       Decimal @db.Decimal(4, 1)
+  halfDays      Decimal @map("half_days") @db.Decimal(4, 1)
+  absent        Decimal @db.Decimal(4, 1)
+  paidLeave     Decimal @map("paid_leave") @db.Decimal(4, 1)
+  unpaidLeave   Decimal @map("unpaid_leave") @db.Decimal(4, 1)
+  notEmployed   Decimal @map("not_employed") @db.Decimal(4, 1)
+  unpaidDays    Decimal @map("unpaid_days") @db.Decimal(4, 1)
+  dayRate       Decimal @map("day_rate") @db.Decimal(12, 2)
+  deduction     Decimal @db.Decimal(12, 2)
+  netSalary     Decimal @map("net_salary") @db.Decimal(12, 2)
+  trace         Json    @default("[]") // [{ date, label, unpaid }]
+
+  run      PayrollRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  employee Employee   @relation(fields: [employeeId], references: [id])
+
+  @@unique([runId, employeeId])
+  @@index([employeeId])
+  @@map("payroll_items")
+}
+
+model Badge {
+  id         String   @id @default(uuid()) @db.Uuid
+  employeeId String   @map("employee_id") @db.Uuid
+  kind       String // streak_10, streak_25, streak_50, streak_100, perfect_month
+  ref        String   @default("") // the month for perfect_month
+  earnedOn   DateTime @map("earned_on") @db.Date
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, kind, ref])
+  @@map("badges")
+}
+
+model Notification {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  type      String
+  payload   Json // { text, link }
+  readAt    DateTime? @map("read_at") @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("notifications")
+}
+
+/// Append only.
+model AuditLog {
+  id        BigInt   @id @default(autoincrement())
+  actorId   String?  @map("actor_id") @db.Uuid // users.id, null for scheduled jobs
+  actorName String   @default("System") @map("actor_name")
+  officeId  String?  @map("office_id") @db.Uuid
+  action    String
+  entity    String
+  entityId  String?  @map("entity_id")
+  detail    String   @default("")
+  oldValue  Json?    @map("old_value")
+  newValue  Json?    @map("new_value")
+  sensitive Boolean  @default(false) // old/new hold salary amounts: values shown to the admin only
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([officeId, createdAt])
+  @@index([createdAt])
+  @@map("audit_log")
+}
+
+model Setting {
+  key   String @id
+  value Json
+
+  @@map("settings")
+}
+
+/// Emails wait here and a worker sends them, so no request waits on SMTP.
+model EmailOutbox {
+  id        String    @id @default(uuid()) @db.Uuid
+  toEmail   String    @map("to_email")
+  subject   String
+  body      String
+  status    String    @default("queued") // queued, sent, failed
+  attempts  Int       @default(0)
+  lastError String?   @map("last_error")
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  sentAt    DateTime? @map("sent_at") @db.Timestamptz(3)
+
+  @@index([status, createdAt])
+  @@map("email_outbox")
+}
