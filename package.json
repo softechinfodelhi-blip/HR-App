@@ -22,6 +22,7 @@
     "replay": "tsx server/scripts/replay-attlog.ts",
     "e2e": "tsx e2e/run.ts",
     "build:web": "tsc --noEmit && vite build",
+    "build:server": "prisma generate --schema server/prisma/schema.prisma && tsc -p server && esbuild server/src/index.ts server/scripts/seed.ts --bundle --platform=node --format=esm --target=node20 --packages=external --outdir=server/dist --entry-names=[name] --log-level=warning",
     "start:server": "node server/dist/index.js"
   },
   "dependencies": {
