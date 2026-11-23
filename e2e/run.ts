@@ -25,7 +25,7 @@ const SHOTS = path.resolve('e2e/screenshots');
 const NEW_EMAIL = 'asha.rao@sbm.example';
 const NEW_PASSWORD = 'first-day-2026';
 if (existsSync('.env')) process.loadEnvFile('.env'); // for the seeded admin's sign in
-const env = { ...process.env, NODE_ENV: 'development', DATABASE_URL: devDbUrl(DB), DIRECT_URL: devDbUrl(DB), PORT: String(PORT), ADMS_PORT: String(ADMS_PORT), APP_URL: BASE, SMTP_HOST: '', SBM_FAKE_NOW: '2026-12-01T10:00:00+05:30' };
+const env = { ...process.env, NODE_ENV: 'development', DATABASE_URL: devDbUrl(DB), DIRECT_URL: devDbUrl(DB), PORT: String(PORT), ADMS_PORT: String(ADMS_PORT), APP_URL: BASE, RESEND_API_KEY: '', SBM_FAKE_NOW: '2026-12-01T10:00:00+05:30' };
 
 const log = (s: string) => console.log(s);
 const step = (s: string) => console.log(`   ${s}`);

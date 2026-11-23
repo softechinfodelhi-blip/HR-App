@@ -71,7 +71,7 @@ Open http://localhost:5173.
 Every demo employee signs in as `firstname.lastname@sbm.example`. The demo data has people and
 terminals but no punches yet: send some with `npm run replay` (section 3).
 
-**Emails in development.** With no SMTP set, invite and reset emails are printed in the server
+**Emails in development.** With no `RESEND_API_KEY` set, invite and reset emails are printed in the server
 window (terminal 2) within a minute, so you can copy the link. After adding an employee, the green
 banner also shows a "Development only" link to the invite.
 
@@ -220,12 +220,14 @@ Enter that number on the right profile and those punches count for that person.
 | `PORT` | Railway sets it | Port of the API and the app. 3000 locally. |
 | `ADMS_PORT` | optional | Port of the terminal listener. Default 8081. Must differ from `PORT`. |
 | `APP_URL` | yes | Public address of the app, used in email links: `https://your-app.up.railway.app`. |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` | for email | Your mail provider's SMTP details. Port 587 or 465. |
-| `MAIL_FROM` | for email | For example `SBM HR <hr@yourcompany.com>`. Must be an address your SMTP account may send from. |
+| `RESEND_API_KEY` | for email | API key from [resend.com](https://resend.com) (API Keys), starts with `re_`. "Sending access" is enough. |
+| `RESEND_FROM` | for email | For example `SBM HR <hr@yourcompany.com>`. Must be on a domain verified in Resend (Domains). |
 | `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD` | first deploy | The first admin. Created once, never overwritten. |
 
-Without `SMTP_HOST` in production, emails wait in the `email_outbox` table and are sent once SMTP is
-set. **Invites are emails**, so set SMTP before adding people.
+Without `RESEND_API_KEY` in production, emails wait in the `email_outbox` table and are sent once the
+key is set. **Invites are emails**, so set up Resend before adding people: add your domain under
+**Domains**, put the DNS records it shows at your domain provider, wait for "Verified", then create the key.
+A failed send is retried every minute, up to 5 times; the reason is kept in `email_outbox.last_error`.
 
 ## 7. Going live: first steps in the app
 

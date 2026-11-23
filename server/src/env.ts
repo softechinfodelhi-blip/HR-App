@@ -14,10 +14,10 @@ const schema = z.object({
   PORT: z.coerce.number().int().positive().default(3000),
   ADMS_PORT: z.coerce.number().int().positive().default(8081),
   APP_URL: z.string().url().default('http://localhost:5173'),
-  SMTP_HOST: optional,
-  SMTP_PORT: z.coerce.number().int().positive().default(587),
-  SMTP_USER: optional,
-  SMTP_PASS: optional,
+  // Resend (resend.com) API key, starts with re_. Empty: development prints emails, production queues them.
+  RESEND_API_KEY: optional,
+  // Sender, on a domain verified in Resend. MAIL_FROM is the older name and still read.
+  RESEND_FROM: optional,
   MAIL_FROM: z.string().default('SBM HR <no-reply@localhost>'),
   SEED_ADMIN_EMAIL: optional,
   SEED_ADMIN_PASSWORD: optional,

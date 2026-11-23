@@ -19,7 +19,7 @@ export default defineConfig({
       DIRECT_URL: TEST_DB_URL,
       SESSION_SECRET: 'test-secret-test-secret-test-secret-test-secret',
       APP_URL: 'http://localhost:5173',
-      SMTP_HOST: '',
+      RESEND_API_KEY: '',
     },
   },
 });

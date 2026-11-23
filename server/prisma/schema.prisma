@@ -434,7 +434,7 @@ model Setting {
   @@map("settings")
 }
 
-/// Emails wait here and a worker sends them, so no request waits on SMTP.
+/// Emails wait here and a worker sends them, so no request waits on the mail provider.
 model EmailOutbox {
   id        String    @id @default(uuid()) @db.Uuid
   toEmail   String    @map("to_email")

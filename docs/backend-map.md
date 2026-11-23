@@ -64,7 +64,7 @@ ADMS port only (`ADMS_PORT`, default 8081): `GET/POST /iclock/cdata`, `GET /iclo
 | Head's direct fix | `manual_days` row | a correction request approved by the head (decided_by, decided_at) |
 | Employee id | `EMP-0117` is the primary key | uuid primary key + `code` (`EMP-0117`) shown in the UI |
 | Lists | plain arrays | paginated `{ items, total }` |
-| Email | outbox, external API | nodemailer SMTP, sent by a cron worker from an `email_outbox` table so a request never waits on SMTP |
+| Email | outbox, external API | Resend (resend.com) API, sent by a cron worker from an `email_outbox` table so a request never waits on the mail provider |
 | Terminal offline | silent over 2 min | "Offline" on screen after 5 min silence; alert job for over 12 h on a working day |
 | ORM | Kysely / Drizzle / pg | Prisma with migrations |
 
