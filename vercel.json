@@ -4,7 +4,7 @@
   "buildCommand": "npm run build:web",
   "outputDirectory": "dist",
   "rewrites": [
-    { "source": "/api/:path*", "destination": "https://REPLACE-WITH-RAILWAY-URL.up.railway.app/api/:path*" },
+    { "source": "/api/:path*", "destination": "https://hr-app-production-bd8e7996.up.railway.app/api/:path*" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }
