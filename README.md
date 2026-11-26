@@ -36,7 +36,11 @@ brings its own for development.
 npm install
 ```
 
-Then three terminals, in this order:
+**On Windows, the quick way:** double-click `start-all.cmd` (or run it from a terminal). It starts the
+database, applies migrations, seeds the demo data, then opens the server and the app in their own windows
+and opens the browser. Use `start-all.cmd --no-demo` to skip the demo data. Close a window to stop that service.
+
+Or by hand, three terminals, in this order:
 
 ```bash
 # Terminal 1: the database. Leave it open.

@@ -19,7 +19,8 @@ import { profileExtras } from './insights';
 const zName = z.string().trim().min(1, 'Enter the full name.').max(120);
 const zQuota = z.coerce.number().min(0, 'A quota cannot be negative.').max(365).multipleOf(0.5, 'Use whole or half days.');
 const zSalary = z.coerce.number().positive('Enter the monthly salary.').max(100_000_000);
-const zTerminalId = z.string().trim().regex(/^\d{1,9}$/, 'The terminal user ID is a number.');
+// Letters and digits, e.g. 101 or AS101. Stored in capitals so it matches what the terminal sends.
+const zTerminalId = z.string().trim().regex(/^[A-Za-z0-9]{1,24}$/, 'The terminal user ID has only letters and digits, up to 24.').transform(s => s.toUpperCase());
 
 const zNew = z.object({
   name: zName, email: zEmail, phone: z.string().trim().max(30).default(''),

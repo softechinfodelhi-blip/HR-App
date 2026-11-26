@@ -35,7 +35,7 @@ export function parseAttlog(body: string): { lines: number; punches: ParsedPunch
     if (!line.trim()) continue;
     lines++;
     const parts = line.split('\t');
-    const userId = (parts[0] ?? '').trim();
+    const userId = (parts[0] ?? '').trim().toUpperCase(); // IDs can have letters (AS101); compare in capitals
     const m = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})$/.exec((parts[1] ?? '').trim());
     if (!userId || userId.length > 32 || !m) continue;
     const punchTime = istToUtc(m[1], m[2]);

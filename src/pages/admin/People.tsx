@@ -340,7 +340,7 @@ function EditDetails({ open, onClose, e, onSaved }: { open: boolean; onClose: ()
         <div className="grid grid-cols-2 gap-3">{txt('phone', 'Phone')}{txt('designation', 'Designation')}</div>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Joining date"><input type="date" className="input" value={f.joinDate} onChange={ev => setF({ ...f, joinDate: ev.target.value })} /></Field>
-          {txt('terminalUserId', 'Terminal user ID', 'The number enrolled on the device.')}
+          {txt('terminalUserId', 'Terminal user ID', 'The ID enrolled on the device, e.g. 101 or AS101.')}
         </div>
         <Field label="Last working date" hint="Leave empty while the person works here. Salary is paid up to this date."><input type="date" className="input" min={f.joinDate} value={f.lastWorkingDate} onChange={ev => setF({ ...f, lastWorkingDate: ev.target.value })} /></Field>
         <div className="grid grid-cols-2 gap-3">
